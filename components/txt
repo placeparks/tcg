@@ -1,0 +1,119 @@
+"use client"
+
+import Link from "next/link"
+import { useCollectionMeta } from "@/hooks/useCollectionMeta"
+import { ArrowRight, Sparkles, Eye } from "lucide-react"
+import { useEffect, useMemo, useState } from "react"
+import { resolveDisplayImageUrl } from "@/lib/ipfs"
+
+interface Props {
+  address: string
+  preview: string
+  tokenId?: bigint | number // default 0 for collection cover if you want
+}
+
+export default function CollectionCard({ address, preview, tokenId = 0n }: Props) {
+  const { name, symbol, imageUri } = useCollectionMeta(address as `0x${string}`)
+  const [isHovered, setIsHovered] = useState(false)
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    ;(async () => {
+      const url = await resolveDisplayImageUrl(imageUri, tokenId)
+      if (mounted) setResolvedSrc(url || null)
+    })()
+    return () => { mounted = false }
+  }, [imageUri, tokenId])
+
+  const fallback = useMemo(() => preview || "/cardifyN.png", [preview])
+
+  const proxySrc = useMemo(() => {
+    if (!resolvedSrc) return fallback;
+    const ipfsish = resolvedSrc.replace(/^https?:\/\/[^/]+\/ipfs\//, "ipfs://");
+    return `/api/ipfs-image?src=${encodeURIComponent(ipfsish)}`;
+  }, [resolvedSrc, fallback]);
+
+  console.log(`Collection ${address}:`, { name, symbol, imageUri, resolvedSrc, proxySrc })
+
+  return (
+    <Link
+      href={`/${address}`}
+      className="group block"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
+      <div className="relative overflow-hidden bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl border border-white/20 rounded-3xl hover:border-white/40 transition-all duration-500 group-hover:scale-[1.02] group-hover:shadow-2xl group-hover:shadow-purple-500/20">
+
+        {/* hero image */}
+        <div className="relative overflow-hidden rounded-t-3xl">
+          <div className="relative pb-[75%]">
+            <img
+              key={proxySrc}
+              src={proxySrc}
+              crossOrigin="anonymous"
+              referrerPolicy="no-referrer"
+              alt={name || "NFT Collection"}
+              className={`absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-all duration-700 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+              onLoad={() => setImageLoaded(true)}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = fallback
+                setImageLoaded(true)
+              }}
+            />
+            {/* overlays & skeleton same as yours */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+            {!imageLoaded && (
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 animate-pulse flex items-center justify-center">
+                <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center animate-spin">
+                  <Sparkles className="w-8 h-8 text-white" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* content... unchanged */}
+        <div className="relative z-10 p-6">
+          <div className="flex justify-between items-start mb-4">
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-white mb-2 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-pink-400 group-hover:bg-clip-text transition-all duration-300">
+                {name || "Unnamed Collection"}
+              </h3>
+              <div className="flex items-center space-x-2">
+                <p className="text-sm text-gray-400 uppercase tracking-wider font-medium">{symbol || "SYMBOL"}</p>
+                <div className="w-1 h-1 bg-gray-600 rounded-full" />
+                <div className="flex items-center space-x-1">
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+                  <span className="text-xs text-green-400 font-medium">Active</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-center w-12 h-12 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-xl border border-white/20 rounded-full group-hover:border-white/40 transition-all duration-300">
+              <ArrowRight className={`w-5 h-5 text-white transition-all duration-300 ${isHovered ? "translate-x-1 text-purple-400" : ""}`} />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between pt-4 border-t border-white/10">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-1">
+                <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
+                  <Eye className="w-3 h-3 text-white" />
+                </div>
+                <span className="text-sm text-gray-400">View</span>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500 font-mono">
+              {address.slice(0, 6)}...{address.slice(-4)}
+            </div>
+          </div>
+        </div>
+
+        <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
+          <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-blue-500/20 blur-xl" />
+        </div>
+      </div>
+    </Link>
+  )
+}
