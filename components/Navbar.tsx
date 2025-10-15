@@ -99,7 +99,7 @@ export default function Navbar() {
           {/* Search + Wallet */}
           <div className="hidden lg:flex items-center space-x-4">
          {/* 🔍 Search box */}
-            <div className="relative group">
+           {/* <div className="relative group">
               <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full blur opacity-30 group-hover:opacity-50 transition-opacity" />
               <div className="relative bg-black/50 backdrop-blur-xl border border-white/20 rounded-full p-3 flex items-center space-x-3">
                 <Search
@@ -114,7 +114,7 @@ export default function Navbar() {
       className="bg-transparent border-none text-white placeholder-gray-400 w-48 focus:ring-0"
     />
               </div>
-            </div>
+            </div>*/}
 
 
             {ready ? (
