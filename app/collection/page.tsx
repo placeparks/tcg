@@ -11,7 +11,7 @@ import {
   useReadContracts,
 }                                   from "wagmi";
 import { usePrivy }                 from "@privy-io/react-auth";
-import { Sparkles, TrendingUp }     from "lucide-react";
+import { Sparkles }                  from "lucide-react";
 
 import FullPageLoader               from "@/components/FullPageLoader";
 import useEnsureBaseSepolia         from "@/hooks/useEnsureNetwork";
@@ -318,7 +318,7 @@ function Inner() {
           <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-xl border border-white/20 rounded-full px-6 py-2 mb-8">
             <Sparkles className="w-4 h-4 text-purple-400 animate-spin" />
             <span className="text-sm font-medium text-gray-300">
-              Featured Collections
+              TCG Meta Marketplace
             </span>
             <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-black font-bold text-xs">
               {filteredCollections.length}
@@ -327,25 +327,28 @@ function Inner() {
 
           <h1 className="text-5xl md:text-7xl font-black mb-6 leading-tight">
             <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
-              Explore
+              TCG
             </span>
             <br />
             <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent animate-pulse">
               Collections
             </span>
           </h1>
+          <p className="text-lg text-gray-300 max-w-2xl mx-auto mb-8">
+            Discover and trade NFT collections launched on Cardify. Buy, sell, and mint your favorite TCG cards.
+          </p>
         </div>
 
-        {/* Factory Statistics */}
-        <div className="mb-6 flex gap-4">
+        {/* Collection Types */}
+        <div className="mb-6 flex gap-4 justify-center">
           <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 backdrop-blur-xl border border-blue-500/30 rounded-lg px-4 py-2">
             <span className="text-blue-400 text-sm font-medium">
-              Single NFT: {filteredCollections.filter(c => c.type === 'single').length}
+              Single Cards: {filteredCollections.filter(c => c.type === 'single').length}
             </span>
           </div>
           <div className="bg-gradient-to-r from-orange-500/20 to-red-500/20 backdrop-blur-xl border border-orange-500/30 rounded-lg px-4 py-2">
             <span className="text-orange-400 text-sm font-medium">
-              Hybrid (ERC1155): {filteredCollections.filter(c => c.type === 'erc1155').length}
+              Card Packs (Hybrid): {filteredCollections.filter(c => c.type === 'erc1155').length}
             </span>
           </div>
         </div>
@@ -382,15 +385,6 @@ function Inner() {
           </div>
         )}
 
-        {/* footer tease */}
-        <div className="text-center mt-16">
-          <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-purple-500/10 to-pink-500/10 backdrop-blur-xl border border-white/10 rounded-full px-8 py-4">
-            <TrendingUp className="w-5 h-5 text-purple-400" />
-            <span className="text-gray-300 font-medium">
-              More collections coming soon…
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* neat little fade-up animation utility */}
