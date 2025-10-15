@@ -1,31 +1,33 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Playfair_Display, Inter } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers"; 
 import { Toaster } from "react-hot-toast";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const playfairDisplay = Playfair_Display({
+  variable: "--font-playfair",
   subsets: ["latin"],
+  display: "swap",
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
+  display: "swap",
 });
 
 
 export const metadata: Metadata = {
-  title: "Cardify Marketplace",
+  title: "TCG Meta Marketplace",
   description: "Create, mint, and order both digital (NFT) and physical trading cards using AI technology",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#111] text-white`}>
+      <body className={`${playfairDisplay.variable} ${inter.variable} antialiased bg-[#111] text-white`}>
         <Providers
           config={{
             loginMethods: ["google", "wallet"],
