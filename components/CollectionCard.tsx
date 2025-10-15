@@ -10,9 +10,10 @@ interface Props {
   address: string
   preview: string
   tokenId?: bigint | number // default 0 for collection cover if you want
+  type?: 'erc1155' | 'single' // collection type for hybrid badge
 }
 
-export default function CollectionCard({ address, preview, tokenId = 0n }: Props) {
+export default function CollectionCard({ address, preview, tokenId = 0n, type = 'single' }: Props) {
   const { name, symbol, imageUri, isLoading, isError } = useCollectionMeta(address as `0x${string}`)
   const [isHovered, setIsHovered] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
@@ -46,6 +47,14 @@ export default function CollectionCard({ address, preview, tokenId = 0n }: Props
         
         {/* Image Container */}
         <div className="relative aspect-square overflow-hidden">
+          {/* Hybrid Badge for ERC1155 collections */}
+          {type === 'erc1155' && (
+            <div className="absolute top-3 right-3 z-10">
+              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                Hybrid
+              </div>
+            </div>
+          )}
           <img
             key={proxySrc}
             src={proxySrc}
@@ -114,8 +123,17 @@ export default function CollectionCard({ address, preview, tokenId = 0n }: Props
               </div>
               <span>View Collection</span>
             </div>
-            <div className="text-xs text-gray-500 font-mono bg-white/10 backdrop-blur-sm px-2 py-1 rounded border border-white/20">
-              {address.slice(0, 6)}...{address.slice(-4)}
+            <div className="flex items-center gap-2">
+              <div className="text-xs text-gray-500 font-mono bg-white/10 backdrop-blur-sm px-2 py-1 rounded border border-white/20">
+                {address.slice(0, 6)}...{address.slice(-4)}
+              </div>
+              <div className={`text-xs px-2 py-1 rounded font-medium ${
+                type === 'erc1155' 
+                  ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+              }`}>
+                {type === 'erc1155' ? 'ERC1155' : 'Single'}
+              </div>
             </div>
           </div>
         </div>
