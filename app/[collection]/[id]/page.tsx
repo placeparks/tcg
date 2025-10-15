@@ -41,7 +41,7 @@ function Inner() {
           abi:           CONTRACTS.marketplaceAbi,
           functionName:  "listings1155",
           args:          [collection, tokenId],
-        })) as readonly [`0x${string}`, bigint, bigint];
+        })) as readonly [`0x${string}`, bigint];
 
         const uri       = (await client.readContract({
           address:       collection,
