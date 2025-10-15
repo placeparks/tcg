@@ -11,7 +11,6 @@ import {
 } from "wagmi";
 
 import FullPageLoader from "@/components/FullPageLoader";
-import NFTCard        from "@/components/NFTCard";
 import AlchemyNFTCard from "@/components/AlchemyNFTCard";
 import { CONTRACTS }  from "@/lib/contract";
 import { getNFTsForOwner, AlchemyNFT } from "@/lib/alchemy";
