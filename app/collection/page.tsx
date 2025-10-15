@@ -55,75 +55,123 @@ function Inner() {
   const searchParams       = useSearchParams();              // ⬅ OK inside Suspense
   const keyword            = (searchParams.get("search") || "").toLowerCase();
 
-  // Fetch total collections count from ERC1155 factory
+  // Fetch total collections count from both factories
   const {
-    data: totalCollections,
-    isLoading: collectionsLoading,
-    error: collectionsError,
+    data: erc1155Total,
+    isLoading: erc1155Loading,
+    error: erc1155Error,
   } = useReadContract({
-    address:      CONTRACTS.factoryERC1155 as `0x${string}`, // This is the ERC1155 factory
-    abi:          CONTRACTS.factoryERC1155Abi, // Use the correct ERC1155 factory ABI
-    functionName: "totalCollections", // Get the total count
+    address:      CONTRACTS.factoryERC1155 as `0x${string}`,
+    abi:          CONTRACTS.factoryERC1155Abi,
+    functionName: "totalCollections",
     query: {
-      enabled: !!CONTRACTS.factoryERC1155, // Only run if contract address is defined
+      enabled: !!CONTRACTS.factoryERC1155,
+    }
+  });
+
+  const {
+    data: singleNftTotal,
+    isLoading: singleNftLoading,
+    error: singleNftError,
+  } = useReadContract({
+    address:      CONTRACTS.singleFactory as `0x${string}`,
+    abi:          CONTRACTS.singleFactoryAbi,
+    functionName: "totalCollections",
+    query: {
+      enabled: !!CONTRACTS.singleFactory,
     }
   });
 
   // Console logs to debug collections
   console.log('🟣 ERC1155 Factory Address:', CONTRACTS.factoryERC1155);
-  console.log('🟣 Total Collections:', totalCollections);
-  console.log('🟣 Collections Loading:', collectionsLoading);
-  console.log('🟣 Collections Error:', collectionsError);
+  console.log('🟣 Single NFT Factory Address:', CONTRACTS.singleFactory);
+  console.log('🟣 ERC1155 Total Collections:', erc1155Total);
+  console.log('🟣 Single NFT Total Collections:', singleNftTotal);
+  console.log('🟣 ERC1155 Loading:', erc1155Loading);
+  console.log('🟣 Single NFT Loading:', singleNftLoading);
+  console.log('🟣 ERC1155 Error:', erc1155Error);
+  console.log('🟣 Single NFT Error:', singleNftError);
+  
+  // Debug the actual contract calls
+  console.log('🟣 Trying to call totalCollections on ERC1155 factory...');
+  console.log('🟣 ERC1155 ABI has totalCollections:', CONTRACTS.factoryERC1155Abi.find(fn => fn.name === 'totalCollections'));
+  console.log('🟣 Single Factory ABI has totalCollections:', CONTRACTS.singleFactoryAbi.find(fn => fn.name === 'totalCollections'));
+  console.log('🟣 ERC1155 ABI has allCollections:', CONTRACTS.factoryERC1155Abi.find(fn => fn.name === 'allCollections'));
+  console.log('🟣 Single Factory ABI has allCollections:', CONTRACTS.singleFactoryAbi.find(fn => fn.name === 'allCollections'));
 
   const publicClient = usePublicClient({ chainId: 84532 })!;
 
   // State for collections and metadata
-  const [allCollections, setAllCollections] = useState<string[]>([]);
+  const [allCollections, setAllCollections] = useState<{address: string, type: 'erc1155' | 'single'}[][]>([]);
   const [physicalNftMetadata, setPhysicalNftMetadata] = useState<Record<string, any>>({});
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [metadataFetchStarted, setMetadataFetchStarted] = useState(false);
 
-  // Fetch all collections by index when total count is available
+  // Fetch all collections from both factories
   useEffect(() => {
-    if (!totalCollections || !publicClient || !CONTRACTS.factoryERC1155) return;
+    if (!publicClient) return;
     
-    const fetchCollections = async () => {
-      const collections: string[] = [];
-      const count = Number(totalCollections);
+    const fetchAllCollections = async () => {
+      const allCollectionsData: {address: string, type: 'erc1155' | 'single'}[] = [];
       
-      for (let i = 0; i < count; i++) {
-        try {
-          const address = await publicClient.readContract({
-            address: CONTRACTS.factoryERC1155 as `0x${string}`,
-            abi: CONTRACTS.factoryERC1155Abi,
-            functionName: "allCollections",
-            args: [BigInt(i)],
-          });
-          collections.push(address as string);
-        } catch (error) {
-          console.error(`Error fetching collection at index ${i}:`, error);
+      // Fetch ERC1155 collections
+      if (erc1155Total && CONTRACTS.factoryERC1155) {
+        const count = Number(erc1155Total);
+        console.log(`🟣 Fetching ${count} ERC1155 collections...`);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.factoryERC1155 as `0x${string}`,
+              abi: CONTRACTS.factoryERC1155Abi,
+              functionName: "allCollections",
+              args: [BigInt(i)],
+            });
+            allCollectionsData.push({address: address as string, type: 'erc1155'});
+          } catch (error) {
+            console.error(`Error fetching ERC1155 collection at index ${i}:`, error);
+          }
         }
       }
       
-      console.log('🟣 Fetched Collections:', collections);
-      setAllCollections(collections);
+      // Fetch Single NFT collections
+      if (singleNftTotal && CONTRACTS.singleFactory) {
+        const count = Number(singleNftTotal);
+        console.log(`🟣 Fetching ${count} Single NFT collections...`);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.singleFactory as `0x${string}`,
+              abi: CONTRACTS.singleFactoryAbi,
+              functionName: "allCollections",
+              args: [BigInt(i)],
+            });
+            allCollectionsData.push({address: address as string, type: 'single'});
+          } catch (error) {
+            console.error(`Error fetching Single NFT collection at index ${i}:`, error);
+          }
+        }
+      }
+      
+      console.log('🟣 All Collections:', allCollectionsData);
+      console.log('🟣 ERC1155 Collections:', allCollectionsData.filter(c => c.type === 'erc1155'));
+      console.log('🟣 Single NFT Collections:', allCollectionsData.filter(c => c.type === 'single'));
+      setAllCollections([allCollectionsData]);
     };
     
-    fetchCollections();
-  }, [totalCollections, publicClient]);
+    fetchAllCollections();
+  }, [erc1155Total, singleNftTotal, publicClient]);
 
   /* flags */
-  const loading = !ready || collectionsLoading || (allCollections && allCollections.length > 0 && !metadataFetchStarted) || isLoadingMetadata;
+  const loading = !ready || erc1155Loading || singleNftLoading || (allCollections && allCollections.length > 0 && !metadataFetchStarted) || isLoadingMetadata;
 
   /* process collections data */
   const processedCollections = useMemo(() => {
-    if (!allCollections) return [];
-    const processed = (allCollections as string[]).map((address: string) => ({
-      address: address,
-      type: 'erc1155'
-    }));
-    console.log('🟣 Processed Collections:', processed);
-    return processed;
+    if (!allCollections || allCollections.length === 0) return [];
+    const flatCollections = allCollections.flat();
+    console.log('🟣 Processed Collections:', flatCollections);
+    return flatCollections;
   }, [allCollections]);
 
   useEffect(() => {
@@ -140,34 +188,40 @@ function Inner() {
         setIsLoadingMetadata(false);
       }, 10000); // 10 second timeout
       
-      for (const address of allCollections as string[]) {
+      const flatCollections = allCollections.flat();
+      
+      for (const collection of flatCollections) {
+        const { address, type } = collection;
         try {
+          // Use the correct ABI based on collection type
+          const abi = type === 'erc1155' ? CONTRACTS.nft1155Abi : CONTRACTS.singleCollectionAbi;
+          
           // Fetch collection details from the individual collection contract
           const [name, symbol, baseURI, maxSupply, mintPrice] = await Promise.all([
             publicClient.readContract({
               address: address as `0x${string}`,
-              abi: CONTRACTS.nft1155Abi,
+              abi: abi,
               functionName: "name",
             }),
             publicClient.readContract({
               address: address as `0x${string}`,
-              abi: CONTRACTS.nft1155Abi,
+              abi: abi,
               functionName: "symbol",
             }),
             publicClient.readContract({
               address: address as `0x${string}`,
-              abi: CONTRACTS.nft1155Abi,
+              abi: abi,
               functionName: "uri",
               args: [0n], // Get URI for token ID 0
             }),
             publicClient.readContract({
               address: address as `0x${string}`,
-              abi: CONTRACTS.nft1155Abi,
+              abi: abi,
               functionName: "maxSupply",
             }),
             publicClient.readContract({
               address: address as `0x${string}`,
-              abi: CONTRACTS.nft1155Abi,
+              abi: abi,
               functionName: "mintPrice",
             }),
           ]);
@@ -179,16 +233,18 @@ function Inner() {
             maxSupply: maxSupply as bigint,
             mintPrice: mintPrice as bigint,
             owner: '', // ERC1155 contracts don't have owner function
+            type: type,
           };
         } catch (error) {
           console.error(`Error fetching metadata for ${address}:`, error);
           metadata[address] = {
             name: `Collection ${address.slice(0, 6)}...`,
-            symbol: 'PHYS',
+            symbol: type === 'erc1155' ? 'HYBRID' : 'SINGLE',
             baseURI: '',
             maxSupply: 0n,
             mintPrice: 0n,
             owner: '',
+            type: type,
             error: true,
           };
         }
@@ -206,18 +262,19 @@ function Inner() {
 
   const processedPhysicalNft = useMemo(() => {
     if (!allCollections) return [];
-    // ERC1155 factory returns just addresses, not full collection info
-    const processed = (allCollections as string[]).map((address: string) => {
+    const flatCollections = allCollections.flat();
+    const processed = flatCollections.map((collection) => {
+      const { address, type } = collection;
       const metadata = physicalNftMetadata[address];
       return {
         address: address,
         name: metadata?.name || `Collection ${address.slice(0, 6)}...`,
-        symbol: metadata?.symbol || 'PHYS',
+        symbol: metadata?.symbol || (type === 'erc1155' ? 'HYBRID' : 'SINGLE'),
         baseURI: metadata?.baseURI || '',
         maxSupply: metadata?.maxSupply || 0n,
         mintPrice: metadata?.mintPrice || 0n,
         owner: metadata?.owner || '',
-        type: 'physical-nft'
+        type: type
       };
     });
     console.log('🟣 Processed Physical+NFT Collections:', processed);
@@ -242,11 +299,11 @@ function Inner() {
 
   /* early returns */
   if (loading)          return <FullPageLoader message="Loading collections…" />;
-  if (!CONTRACTS.factoryERC1155) 
-    return <Empty>Contract address not configured. Please set NEXT_PUBLIC_FACTORY_ADDRESS_ERC1155 environment variable.</Empty>;
-  if (collectionsError) 
-    return <Empty>Error loading collections: {collectionsError.message}</Empty>;
-  if (!collectionsLoading && processedPhysicalNft.length === 0)
+  if (!CONTRACTS.factoryERC1155 && !CONTRACTS.singleFactory) 
+    return <Empty>Contract addresses not configured. Please set factory environment variables.</Empty>;
+  if (erc1155Error || singleNftError) 
+    return <Empty>Error loading collections: {erc1155Error?.message || singleNftError?.message}</Empty>;
+  if (!erc1155Loading && !singleNftLoading && processedPhysicalNft.length === 0)
     return <Empty>No collections yet.</Empty>;
   if (keyword && filteredCollections.length === 0)
     return <Empty>No collections found for "{keyword}".</Empty>;
@@ -295,6 +352,20 @@ function Inner() {
           </h1>
         </div>
 
+        {/* Factory Statistics */}
+        <div className="mb-6 flex gap-4">
+          <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 backdrop-blur-xl border border-blue-500/30 rounded-lg px-4 py-2">
+            <span className="text-blue-400 text-sm font-medium">
+              Single NFT: {filteredCollections.filter(c => c.type === 'single').length}
+            </span>
+          </div>
+          <div className="bg-gradient-to-r from-orange-500/20 to-red-500/20 backdrop-blur-xl border border-orange-500/30 rounded-lg px-4 py-2">
+            <span className="text-orange-400 text-sm font-medium">
+              Hybrid (ERC1155): {filteredCollections.filter(c => c.type === 'erc1155').length}
+            </span>
+          </div>
+        </div>
+
         {/* Collections Section */}
         {filteredCollections.length > 0 && (
           <div className="mb-16">
@@ -319,6 +390,7 @@ function Inner() {
                   <CollectionCard
                     address={col.address}
                     preview={CONTRACTS.collectionPreview(col.address)}
+                    type={col.type}
                   />
                 </div>
               ))}
