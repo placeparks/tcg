@@ -449,33 +449,14 @@ export default function Dashboard() {
         Cardify NFTs
       </h1>
 
-      {owned.map(({ collection, ids, name }) => (
-        <section key={collection} className="space-y-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="font-playfair text-2xl font-bold">{name}</h2>
-              <span className="text-zinc-400 text-sm">({ids.length} owned)</span>
-            </div>
-            <p className="text-xs text-zinc-500 font-mono mt-1">{collection}</p>
-          </div>
-
-          <div className="flex flex-row gap-6 overflow-x-auto pb-4" style={{ display: 'flex', flexDirection: 'row', backgroundColor: 'rgba(255,0,0,0.1)', minHeight: '400px' }}>
-            {(() => {
-              const collectionNfts = alchemyNfts.filter(nft => 
-                nft.contract.address.toLowerCase() === collection.toLowerCase()
-              );
-              console.log(`🔍 Collection ${collection} NFTs:`, collectionNfts.length, collectionNfts);
-              return collectionNfts.map((nft, index) => (
-                <div key={nft.uniqueId || `${nft.contract.address}-${nft.tokenId}-${index}`} className="flex-shrink-0" style={{ flexShrink: 0, width: '320px', minWidth: '320px', maxWidth: '320px' }}>
-                  <AlchemyNFTCard 
-                    nft={nft} 
-                  />
-                </div>
-              ));
-            })()}
-          </div>
-        </section>
-      ))}
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {alchemyNfts.map((nft, index) => (
+          <AlchemyNFTCard 
+            key={nft.uniqueId || `${nft.contract.address}-${nft.tokenId}-${index}`}
+            nft={nft} 
+          />
+        ))}
+      </div>
     </div>
   );
 }
