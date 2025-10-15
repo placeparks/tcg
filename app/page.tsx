@@ -63,14 +63,14 @@ export default function NFTMarketplace() {
       <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-black font-bold">LIVE</Badge>
     </div>
 
-    <h1 className="text-6xl md:text-8xl font-black mb-8 leading-tight">
-      <span className="font-bungee block bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
+    <h1 className="text-6xl md:text-8xl font-serif font-black mb-8 leading-tight">
+      <span className="block bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
         Explore
       </span>
       <span className="block bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent animate-pulse">
         AI-Generated
       </span>
-      <span className="block font-bungee bg-gradient-to-r from-white via-pink-200 to-white bg-clip-text text-transparent">
+      <span className="block bg-gradient-to-r from-white via-pink-200 to-white bg-clip-text text-transparent">
         Trading Cards
       </span>
     </h1>
