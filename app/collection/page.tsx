@@ -82,22 +82,6 @@ function Inner() {
     }
   });
 
-  // Console logs to debug collections
-  console.log('🟣 ERC1155 Factory Address:', CONTRACTS.factoryERC1155);
-  console.log('🟣 Single NFT Factory Address:', CONTRACTS.singleFactory);
-  console.log('🟣 ERC1155 Total Collections:', erc1155Total);
-  console.log('🟣 Single NFT Total Collections:', singleNftTotal);
-  console.log('🟣 ERC1155 Loading:', erc1155Loading);
-  console.log('🟣 Single NFT Loading:', singleNftLoading);
-  console.log('🟣 ERC1155 Error:', erc1155Error);
-  console.log('🟣 Single NFT Error:', singleNftError);
-  
-  // Debug the actual contract calls
-  console.log('🟣 Trying to call totalCollections on ERC1155 factory...');
-  console.log('🟣 ERC1155 ABI has totalCollections:', CONTRACTS.factoryERC1155Abi.find(fn => fn.name === 'totalCollections'));
-  console.log('🟣 Single Factory ABI has totalCollections:', CONTRACTS.singleFactoryAbi.find(fn => fn.name === 'totalCollections'));
-  console.log('🟣 ERC1155 ABI has allCollections:', CONTRACTS.factoryERC1155Abi.find(fn => fn.name === 'allCollections'));
-  console.log('🟣 Single Factory ABI has allCollections:', CONTRACTS.singleFactoryAbi.find(fn => fn.name === 'allCollections'));
 
   const publicClient = usePublicClient({ chainId: 84532 })!;
 
