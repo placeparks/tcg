@@ -382,10 +382,10 @@ export default function AlchemyNFTCard({ nft }: Props) {
                 </span>
                 <button
                   onClick={cancelListing}
-                  className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
+                  className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 hover:shadow-lg hover:shadow-red-500/25"
                 >
-                  <X className="w-4 h-4" />
-                  Cancel Listing
+                  <X className="w-3 h-3" />
+                  Cancel
                 </button>
               </div>
             ) : isListed ? (
