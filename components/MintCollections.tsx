@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useReadContract, useWriteContract } from 'wagmi';
+import { useReadContract, useWriteContract, usePublicClient } from 'wagmi';
 import { parseEther } from 'viem';
 import { ethers } from 'ethers';
 import { CONTRACTS } from '@/lib/contract';
@@ -31,6 +31,7 @@ interface CollectionInfo {
 
 export default function MintCollections() {
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
+  const publicClient = usePublicClient({ chainId: 84532 });
 
   // Debug contract address
   console.log('Factory Contract Address:', CONTRACTS.singleFactory);
@@ -38,29 +39,127 @@ export default function MintCollections() {
   const { ready, authenticated, login, logout } = usePrivy();
   const { wallets } = useWallets();
 
-  // Get all collections with their info in one call
-  const { data: collectionsData, isLoading: isLoadingCollections, error: collectionsError } = useReadContract({
+  // Get total collections count
+  const { data: totalCollections, isLoading: isLoadingCollections, error: collectionsError } = useReadContract({
     address: CONTRACTS.singleFactory as `0x${string}`,
     abi: CONTRACTS.singleFactoryAbi,
-    functionName: 'getAllCollectionsWithInfo',
+    functionName: 'totalCollections',
   });
 
+  // Fetch collections when total count is available
   useEffect(() => {
-    console.log('Collections Data:', collectionsData);
-    if (collectionsData) {
-      console.log('Base URIs:', (collectionsData as CollectionInfo[]).map(c => c.baseURI));
-    }
-    
-    if (collectionsError) {
-      console.error('Error fetching collections:', collectionsError);
-      toast.error('Failed to load collections. Please check your network connection.');
+    if (!totalCollections || !publicClient || !CONTRACTS.singleFactory) {
+      console.log('Missing dependencies:', { totalCollections, publicClient: !!publicClient, singleFactory: !!CONTRACTS.singleFactory });
       return;
     }
-
-    if (collectionsData) {
-      setCollections(collectionsData as CollectionInfo[]);
-    }
-  }, [collectionsData, collectionsError]);
+    
+    const fetchCollections = async () => {
+      try {
+        const collectionsList: CollectionInfo[] = [];
+        const count = Number(totalCollections as bigint);
+        
+        console.log(`Fetching ${count} collections from single factory...`);
+        
+        if (count === 0) {
+          console.log('No collections found');
+          setCollections([]);
+          return;
+        }
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            console.log(`Fetching collection ${i + 1}/${count}...`);
+            
+            // Get collection address by index using publicClient
+            const collectionAddress = await publicClient.readContract({
+              address: CONTRACTS.singleFactory as `0x${string}`,
+              abi: CONTRACTS.singleFactoryAbi,
+              functionName: 'allCollections',
+              args: [BigInt(i)],
+            });
+            
+            console.log(`Collection ${i + 1} address:`, collectionAddress);
+            
+            // Fetch collection details from the individual collection contract
+            const [name, symbol, baseURI, maxSupply, mintPrice, owner] = await Promise.all([
+              publicClient.readContract({
+                address: collectionAddress as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: 'name',
+              }).catch(err => {
+                console.error(`Error fetching name for collection ${i + 1}:`, err);
+                return `Collection ${i + 1}`;
+              }),
+              publicClient.readContract({
+                address: collectionAddress as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: 'symbol',
+              }).catch(err => {
+                console.error(`Error fetching symbol for collection ${i + 1}:`, err);
+                return `COL${i + 1}`;
+              }),
+              publicClient.readContract({
+                address: collectionAddress as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: 'uri',
+                args: [0n], // Get URI for token ID 0
+              }).catch(err => {
+                console.error(`Error fetching URI for collection ${i + 1}:`, err);
+                return 'ipfs://placeholder';
+              }),
+              publicClient.readContract({
+                address: collectionAddress as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: 'maxSupply',
+              }).catch(err => {
+                console.error(`Error fetching maxSupply for collection ${i + 1}:`, err);
+                return 1000n;
+              }),
+              publicClient.readContract({
+                address: collectionAddress as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: 'mintPrice',
+              }).catch(err => {
+                console.error(`Error fetching mintPrice for collection ${i + 1}:`, err);
+                return 1000000000000000000n; // 1 ETH
+              }),
+              publicClient.readContract({
+                address: collectionAddress as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: 'owner',
+              }).catch(err => {
+                console.error(`Error fetching owner for collection ${i + 1}:`, err);
+                return '0x0000000000000000000000000000000000000000';
+              }),
+            ]);
+            
+            const collectionInfo: CollectionInfo = {
+              collectionAddress: collectionAddress as string,
+              name: name as string,
+              symbol: symbol as string,
+              baseURI: baseURI as string,
+              maxSupply: maxSupply as bigint,
+              mintPrice: mintPrice as bigint,
+              owner: owner as string
+            };
+            
+            console.log(`Collection ${i + 1} details:`, collectionInfo);
+            collectionsList.push(collectionInfo);
+          } catch (error) {
+            console.error(`Error fetching collection at index ${i}:`, error);
+          }
+        }
+        
+        console.log('All collections fetched:', collectionsList);
+        setCollections(collectionsList);
+      } catch (error) {
+        console.error('Error fetching collections:', error);
+        toast.error('Failed to load collections. Please check your network connection.');
+      }
+    };
+    
+    fetchCollections();
+  }, [totalCollections, publicClient]);
 
   const { writeContract, isError: mintError, isPending: isMinting, isSuccess: mintSuccess } = useWriteContract();
 
@@ -176,6 +275,28 @@ export default function MintCollections() {
     );
   }
 
+  if (collectionsError) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <h3 className="text-xl font-bold text-red-400 mb-2">Error Loading Collections</h3>
+          <p className="text-gray-400">{collectionsError.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!CONTRACTS.singleFactory) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <h3 className="text-xl font-bold text-yellow-400 mb-2">Contract Not Configured</h3>
+          <p className="text-gray-400">Please set NEXT_PUBLIC_SINGLE_NFT_FACTORY_ADDRESS environment variable.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="text-center mb-12">
@@ -187,7 +308,7 @@ export default function MintCollections() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
         {collections.map((collection) => (
           <Card 
             key={collection.collectionAddress} 

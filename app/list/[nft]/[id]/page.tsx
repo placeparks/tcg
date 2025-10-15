@@ -720,26 +720,39 @@ export default function ListingPage() {
         
         // Check Factory A (ERC1155 Factory) - Contract A
         try {
-          const factoryACollections = await publicClient.readContract({
+          // Get total collections count first
+          const totalCollections = await publicClient.readContract({
             address: CONTRACTS.factoryERC1155,
-            abi: [
-              {
-                "inputs": [],
-                "name": "getAllCollections",
-                "outputs": [{"internalType": "address[]", "name": "", "type": "address[]"}],
-                "stateMutability": "view",
-                "type": "function"
-              }
-            ],
-            functionName: "getAllCollections",
+            abi: CONTRACTS.factoryERC1155Abi,
+            functionName: "totalCollections",
           });
           
+          console.log('🔍 Factory A total collections:', totalCollections);
+          
+          // Fetch all collections by index
+          const factoryACollections: string[] = [];
+          const count = Number(totalCollections as bigint);
+          
+          for (let i = 0; i < count; i++) {
+            try {
+              const address = await publicClient.readContract({
+                address: CONTRACTS.factoryERC1155,
+                abi: CONTRACTS.factoryERC1155Abi,
+                functionName: "allCollections",
+                args: [BigInt(i)],
+              });
+              factoryACollections.push(address as string);
+            } catch (error) {
+              console.error(`Error fetching collection at index ${i}:`, error);
+            }
+          }
+          
           console.log('🔍 Factory A collections:', factoryACollections);
-          const isInFactoryA = (factoryACollections as string[]).includes(nftAddr.toLowerCase()) || 
-                               (factoryACollections as string[]).includes(nftAddr);
+          const isInFactoryA = factoryACollections.includes(nftAddr.toLowerCase()) || 
+                               factoryACollections.includes(nftAddr);
           console.log('🔍 NFT contract is in Factory A collections:', isInFactoryA);
-          console.log('🔍 Factory A - lowercase match:', (factoryACollections as string[]).includes(nftAddr.toLowerCase()));
-          console.log('🔍 Factory A - original case match:', (factoryACollections as string[]).includes(nftAddr));
+          console.log('🔍 Factory A - lowercase match:', factoryACollections.includes(nftAddr.toLowerCase()));
+          console.log('🔍 Factory A - original case match:', factoryACollections.includes(nftAddr));
           
           if (isInFactoryA) {
             isFromAllowedFactory = true;
@@ -752,37 +765,33 @@ export default function ListingPage() {
         // Check Factory B (Single Factory) - Contract B
         if (!isFromAllowedFactory) {
           try {
-            const factoryBCollectionsInfo = await publicClient.readContract({
+            // Get total collections count first
+            const totalCollections = await publicClient.readContract({
               address: CONTRACTS.singleFactory,
-              abi: [
-                {
-                  "inputs": [],
-                  "name": "getAllCollectionsWithInfo",
-                  "outputs": [{
-                    "internalType": "tuple[]",
-                    "name": "",
-                    "type": "tuple[]",
-                    "components": [
-                      {"internalType": "address", "name": "collectionAddress", "type": "address"},
-                      {"internalType": "string", "name": "name", "type": "string"},
-                      {"internalType": "string", "name": "symbol", "type": "string"},
-                      {"internalType": "string", "name": "baseURI", "type": "string"},
-                      {"internalType": "uint256", "name": "maxSupply", "type": "uint256"},
-                      {"internalType": "uint256", "name": "mintPrice", "type": "uint256"},
-                      {"internalType": "address", "name": "owner", "type": "address"}
-                    ]
-                  }],
-                  "stateMutability": "view",
-                  "type": "function"
-                }
-              ],
-              functionName: "getAllCollectionsWithInfo",
+              abi: CONTRACTS.singleFactoryAbi,
+              functionName: "totalCollections",
             });
             
-            console.log('🔍 Factory B collections info:', factoryBCollectionsInfo);
+            console.log('🔍 Factory B total collections:', totalCollections);
             
-            // Extract collection addresses from the info array
-            const factoryBCollections = (factoryBCollectionsInfo as any[]).map((col: any) => col.collectionAddress);
+            // Fetch all collections by index
+            const factoryBCollections: string[] = [];
+            const count = Number(totalCollections as bigint);
+            
+            for (let i = 0; i < count; i++) {
+              try {
+                const address = await publicClient.readContract({
+                  address: CONTRACTS.singleFactory,
+                  abi: CONTRACTS.singleFactoryAbi,
+                  functionName: "allCollections",
+                  args: [BigInt(i)],
+                });
+                factoryBCollections.push(address as string);
+              } catch (error) {
+                console.error(`Error fetching collection at index ${i}:`, error);
+              }
+            }
+            
             console.log('🔍 Factory B collection addresses:', factoryBCollections);
             
             const isInFactoryB = factoryBCollections.includes(nftAddr.toLowerCase()) || 
@@ -828,89 +837,9 @@ export default function ListingPage() {
         return;
       }
 
-      // Check if the marketplace recognizes this NFT contract
-      toast.loading("Checking marketplace NFT recognition…", { id: "tx" });
-      
-      try {
-        // Check if the marketplace recognizes this NFT as a valid Cardify NFT
-        const isCardify1155 = await publicClient.readContract({
-          address: CONTRACTS.marketplace,
-          abi: [
-            {
-              "inputs": [{"internalType": "address", "name": "nft", "type": "address"}],
-              "name": "isCardify1155",
-              "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-              "stateMutability": "view",
-              "type": "function"
-            }
-          ],
-          functionName: "isCardify1155",
-          args: [nftAddr],
-        });
-        
-        console.log('🔍 Marketplace recognizes NFT as Cardify1155:', isCardify1155);
-        
-        if (!isCardify1155) {
-          toast.dismiss("tx");
-          toast.error("The marketplace does not recognize this NFT contract as a valid Cardify NFT. The marketplace factory configuration may need to be updated.");
-          console.log('❌ This is the root cause of the listItem1155 reversion!');
-          console.log('❌ The marketplace contract does not recognize your NFT contract as being created by an allowed factory.');
-          console.log('❌ You need to update the marketplace factory configuration to include your factory addresses.');
-          return;
-        }
-        
-        console.log('✅ Marketplace recognizes the NFT contract');
-        
-        // Additional debugging: Check what factories are registered in the marketplace
-        try {
-          const marketplaceFactories = await publicClient.readContract({
-            address: CONTRACTS.marketplace,
-            abi: [
-              {
-                "inputs": [],
-                "name": "factories1155Count",
-                "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                "stateMutability": "view",
-                "type": "function"
-              }
-            ],
-            functionName: "factories1155Count",
-          });
-          
-          console.log('🔍 Marketplace has', marketplaceFactories.toString(), 'registered 1155 factories');
-          
-          // Try to get the first few factory addresses
-          for (let i = 0; i < Math.min(Number(marketplaceFactories), 5); i++) {
-            try {
-              const factoryAddress = await publicClient.readContract({
-                address: CONTRACTS.marketplace,
-                abi: [
-                  {
-                    "inputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                    "name": "factories1155",
-                    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                    "stateMutability": "view",
-                    "type": "function"
-                  }
-                ],
-                functionName: "factories1155",
-                args: [BigInt(i)],
-              });
-              console.log(`🔍 Marketplace factory ${i}:`, factoryAddress);
-            } catch (factoryErr) {
-              console.log(`🔍 Could not get factory ${i}:`, factoryErr);
-            }
-          }
-        } catch (factoryCountErr) {
-          console.log('🔍 Could not check marketplace factory count:', factoryCountErr);
-        }
-        
-      } catch (recognitionErr: any) {
-        console.log('🔍 Could not check marketplace NFT recognition:', recognitionErr);
-        toast.dismiss("tx");
-        toast.error("Could not verify NFT recognition with marketplace");
-        return;
-      }
+      // Skip marketplace recognition check since we've already validated the factory
+      // The marketplace will do its own validation during the listing transaction
+      console.log('🔍 Skipping marketplace recognition check - already validated factory');
 
       // Check if there are any other requirements or restrictions
       toast.loading("Checking additional requirements…", { id: "tx" });
@@ -944,28 +873,19 @@ export default function ListingPage() {
       // Simulate the transaction first to catch errors early
       toast.loading("Validating transaction…", { id: "tx" });
       
-      // Use the detected token type for simulation
-      console.log('🔍 Validating: Using detected token type:', detectedTokenType);
+      // Use ERC1155 for simulation (only supported type)
+      console.log('🔍 Validating: Using ERC1155 token type');
       console.log('🔍 Validating transaction with NFT contract address:', nftAddr);
       
       try {
-        if (detectedTokenType === 'ERC721') {
-          await publicClient.simulateContract({
-            account: address,
-            address: CONTRACTS.marketplace,
-            abi: CONTRACTS.marketplaceAbi,
-            functionName: "listItem721",
-            args: [nftAddr, tokenId, parseEther(price)],
-          });
-        } else {
-          await publicClient.simulateContract({
-            account: address,
-            address: CONTRACTS.marketplace,
-            abi: CONTRACTS.marketplaceAbi,
-            functionName: "listItem1155",
-            args: [nftAddr, tokenId, parseEther(price), 1n],
-          });
-        }
+        // Only ERC1155 is supported by this marketplace
+        await publicClient.simulateContract({
+          account: address,
+          address: CONTRACTS.marketplace,
+          abi: CONTRACTS.marketplaceAbi,
+          functionName: "listItem1155",
+          args: [nftAddr, tokenId, parseEther(price)],
+        });
       } catch (simErr: any) {
         console.error('❌ Transaction failed:', simErr);
         console.error('❌ Full error object:', simErr);
@@ -1018,44 +938,28 @@ export default function ListingPage() {
         price: parseEther(price),
         amount: 1n,
         marketplace: CONTRACTS.marketplace,
-        factoryType: factoryType
+        factoryType: 'Factory B (Single)'
       });
       
-      // Use the detected token type for listing
-      console.log('🔍 Listing: Using detected token type:', detectedTokenType);
+      // Use ERC1155 for listing (only supported type)
+      console.log('🔍 Listing: Using ERC1155 token type');
       console.log('🔍 Listing: Using validated NFT contract address:', nftAddr);
       
       let hash;
-      if (detectedTokenType === 'ERC721') {
-        console.log('🔍 Creating ERC721 listing with validated contract');
-        
-        try {
-          hash = await writeContractAsync({
-            address: CONTRACTS.marketplace,
-            abi: CONTRACTS.marketplaceAbi,
-            functionName: "listItem721",
-            args: [nftAddr, tokenId, parseEther(price)],
-          });
-          console.log('✅ ERC721 listing transaction submitted:', hash);
-        } catch (listingError: any) {
-          console.error('❌ ERC721 listing failed:', listingError);
-          throw new Error(`Failed to create ERC721 listing: ${listingError?.message || 'Unknown error'}`);
-        }
-      } else {
-        console.log('🔍 Creating ERC1155 listing with validated contract');
-        
-        try {
-          hash = await writeContractAsync({
-            address: CONTRACTS.marketplace,
-            abi: CONTRACTS.marketplaceAbi,
-            functionName: "listItem1155",
-            args: [nftAddr, tokenId, parseEther(price), 1n],
-          });
-          console.log('✅ ERC1155 listing transaction submitted:', hash);
-        } catch (listingError: any) {
-          console.error('❌ ERC1155 listing failed:', listingError);
-          throw new Error(`Failed to create ERC1155 listing: ${listingError?.message || 'Unknown error'}`);
-        }
+      // Only ERC1155 is supported by this marketplace
+      console.log('🔍 Creating ERC1155 listing with validated contract');
+      
+      try {
+        hash = await writeContractAsync({
+          address: CONTRACTS.marketplace,
+          abi: CONTRACTS.marketplaceAbi,
+          functionName: "listItem1155",
+          args: [nftAddr, tokenId, parseEther(price)],
+        });
+        console.log('✅ ERC1155 listing transaction submitted:', hash);
+      } catch (listingError: any) {
+        console.error('❌ ERC1155 listing failed:', listingError);
+        throw new Error(`Failed to create ERC1155 listing: ${listingError?.message || 'Unknown error'}`);
       }
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash });

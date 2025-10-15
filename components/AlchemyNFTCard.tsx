@@ -79,8 +79,9 @@ export default function AlchemyNFTCard({ nft }: Props) {
   }, [nft, imageUrl, rawUrl]);
 
   /* listing info - determine token type and use correct function */
-  const isERC1155 = (nft.tokenType || '').toUpperCase() === 'ERC1155';
-  const listingFunctionName = isERC1155 ? "listings1155" : "listings721";
+  // Force ERC1155 for NFTs from our factories since our marketplace only supports ERC1155
+  const isERC1155 = true; // Always treat as ERC1155 since our marketplace only supports ERC1155
+  const listingFunctionName = "listings1155";
   
   const { data: listing, refetch: refetchListing, isLoading: listingLoading, error: listingError } = useReadContract({
     address:       CONTRACTS.marketplace,
@@ -94,7 +95,7 @@ export default function AlchemyNFTCard({ nft }: Props) {
       refetchOnMount: true,
       refetchOnWindowFocus: true,
       refetchInterval: 5_000,                // poll every 5s for faster updates
-      retry: 3,
+      retry: false, // Don't retry for unlisted NFTs - this is expected behavior
     },
   });
 
@@ -102,10 +103,8 @@ export default function AlchemyNFTCard({ nft }: Props) {
   const ZERO = "0x0000000000000000000000000000000000000000";
   const tuple = listing as any;
 
-  const listingData = tuple
-    ? (isERC1155
-        ? { seller: tuple[0] as `0x${string}`, price: tuple[1] as bigint, remaining: tuple[2] as bigint }
-        : { seller: tuple[0] as `0x${string}`, price: tuple[1] as bigint, remaining: 1n })
+  const listingData = tuple && !listingError
+    ? { seller: tuple[0] as `0x${string}`, price: tuple[1] as bigint, remaining: 1n } // Always ERC1155 format
     : undefined;
 
   // Separate "listed" from "listed by me"
@@ -194,25 +193,14 @@ export default function AlchemyNFTCard({ nft }: Props) {
     }
 
     try {
-      const buyFunctionName = isERC1155 ? "buy1155" : "buy721";
-      
-      if (isERC1155) {
-        await writeContractAsync({
-          address: CONTRACTS.marketplace,
-          abi:     CONTRACTS.marketplaceAbi,
-          functionName: "buy1155",
-          args:    [nft.contract.address as `0x${string}`, BigInt(nft.tokenId), 1n],
-          value:   listingData.price,
-        });
-      } else {
-        await writeContractAsync({
-          address: CONTRACTS.marketplace,
-          abi:     CONTRACTS.marketplaceAbi,
-          functionName: "buy721",
-          args:    [nft.contract.address as `0x${string}`, BigInt(nft.tokenId)],
-          value:   listingData.price,
-        });
-      }
+      // Always use ERC1155 since our marketplace only supports ERC1155
+      await writeContractAsync({
+        address: CONTRACTS.marketplace,
+        abi:     CONTRACTS.marketplaceAbi,
+        functionName: "buy1155",
+        args:    [nft.contract.address as `0x${string}`, BigInt(nft.tokenId), 1n],
+        value:   listingData.price,
+      });
 
       toast.success("NFT purchased successfully!");
     } catch (error: any) {
@@ -246,12 +234,11 @@ export default function AlchemyNFTCard({ nft }: Props) {
     }
 
     try {
-      const cancelFunctionName = isERC1155 ? "cancelListing1155" : "cancelListing721";
-      
+      // Always use ERC1155 since our marketplace only supports ERC1155
       await writeContractAsync({
         address: CONTRACTS.marketplace,
         abi:     CONTRACTS.marketplaceAbi,
-        functionName: cancelFunctionName,
+        functionName: "cancelListing1155",
         args:    [nft.contract.address as `0x${string}`, BigInt(nft.tokenId)],
       });
 
@@ -361,15 +348,31 @@ export default function AlchemyNFTCard({ nft }: Props) {
               <span className="text-sm">Loading listing status...</span>
             </div>
           ) : listingError ? (
-            <div className="flex items-center gap-2 text-red-400">
-              <span className="text-sm">Error loading listing</span>
-              <button
-                onClick={handleRefresh}
-                className="text-xs bg-red-500/20 hover:bg-red-500/30 px-2 py-1 rounded transition-colors"
-              >
-                Retry
-              </button>
-            </div>
+            // Check if it's a "not found" error (expected for unlisted NFTs) vs a real error
+            listingError.message?.includes('not found') || 
+            listingError.message?.includes('execution reverted') ||
+            listingError.message?.includes('call exception') ? (
+              <div className="flex items-center gap-2 text-gray-400">
+                <span className="text-sm">Not listed</span>
+                <button
+                  onClick={handleRefresh}
+                  className="text-xs bg-gray-500/20 hover:bg-gray-500/30 px-2 py-1 rounded transition-colors"
+                  title="Refresh listing status"
+                >
+                  Refresh
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-red-400">
+                <span className="text-sm">Error loading listing</span>
+                <button
+                  onClick={handleRefresh}
+                  className="text-xs bg-red-500/20 hover:bg-red-500/30 px-2 py-1 rounded transition-colors"
+                >
+                  Retry
+                </button>
+              </div>
+            )
           ) : isOwner ? (
             // Owner's view - three states: listed by you, listed by someone else, not listed
             isListedByYou ? (

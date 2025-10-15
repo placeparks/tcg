@@ -55,61 +55,79 @@ function Inner() {
   const searchParams       = useSearchParams();              // ⬅ OK inside Suspense
   const keyword            = (searchParams.get("search") || "").toLowerCase();
 
-  // Fetch NFT-only collections (single NFT factory)
+  // Fetch total collections count from ERC1155 factory
   const {
-    data: nftOnlyCollections,
-    isLoading: nftOnlyLoading,
-  } = useReadContract({
-    address:      CONTRACTS.singleFactory as `0x${string}`, // This is the single NFT factory
-    abi:          CONTRACTS.singleFactoryAbi,
-    functionName: "getAllCollectionsWithInfo",
-  });
-
-  // Fetch Physical + NFT collections (ERC1155 factory)
-  const {
-    data: physicalNftCollections,
-    isLoading: physicalNftLoading,
+    data: totalCollections,
+    isLoading: collectionsLoading,
+    error: collectionsError,
   } = useReadContract({
     address:      CONTRACTS.factoryERC1155 as `0x${string}`, // This is the ERC1155 factory
     abi:          CONTRACTS.factoryERC1155Abi, // Use the correct ERC1155 factory ABI
-    functionName: "getAllCollections", // ERC1155 factory uses getAllCollections, not getAllCollectionsWithInfo
+    functionName: "totalCollections", // Get the total count
+    query: {
+      enabled: !!CONTRACTS.factoryERC1155, // Only run if contract address is defined
+    }
   });
 
   // Console logs to debug collections
-  console.log('🔵 Single NFT Factory Address:', CONTRACTS.singleFactory);
   console.log('🟣 ERC1155 Factory Address:', CONTRACTS.factoryERC1155);
-  console.log('🔵 NFT-Only Collections:', nftOnlyCollections);
-  console.log('🟣 Physical+NFT Collections:', physicalNftCollections);
+  console.log('🟣 Total Collections:', totalCollections);
+  console.log('🟣 Collections Loading:', collectionsLoading);
+  console.log('🟣 Collections Error:', collectionsError);
 
   const publicClient = usePublicClient({ chainId: 84532 })!;
 
-  // Fetch collection metadata for ERC1155 collections
+  // State for collections and metadata
+  const [allCollections, setAllCollections] = useState<string[]>([]);
   const [physicalNftMetadata, setPhysicalNftMetadata] = useState<Record<string, any>>({});
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [metadataFetchStarted, setMetadataFetchStarted] = useState(false);
 
+  // Fetch all collections by index when total count is available
+  useEffect(() => {
+    if (!totalCollections || !publicClient || !CONTRACTS.factoryERC1155) return;
+    
+    const fetchCollections = async () => {
+      const collections: string[] = [];
+      const count = Number(totalCollections);
+      
+      for (let i = 0; i < count; i++) {
+        try {
+          const address = await publicClient.readContract({
+            address: CONTRACTS.factoryERC1155 as `0x${string}`,
+            abi: CONTRACTS.factoryERC1155Abi,
+            functionName: "allCollections",
+            args: [BigInt(i)],
+          });
+          collections.push(address as string);
+        } catch (error) {
+          console.error(`Error fetching collection at index ${i}:`, error);
+        }
+      }
+      
+      console.log('🟣 Fetched Collections:', collections);
+      setAllCollections(collections);
+    };
+    
+    fetchCollections();
+  }, [totalCollections, publicClient]);
+
   /* flags */
-  const loading = !ready || nftOnlyLoading || physicalNftLoading || (physicalNftCollections && physicalNftCollections.length > 0 && !metadataFetchStarted) || isLoadingMetadata;
+  const loading = !ready || collectionsLoading || (allCollections && allCollections.length > 0 && !metadataFetchStarted) || isLoadingMetadata;
 
   /* process collections data */
-  const processedNftOnly = useMemo(() => {
-    if (!nftOnlyCollections) return [];
-    const processed = (nftOnlyCollections as any[]).map((col: any) => ({
-      address: col.collectionAddress,
-      name: col.name,
-      symbol: col.symbol,
-      baseURI: col.baseURI,
-      maxSupply: col.maxSupply,
-      mintPrice: col.mintPrice,
-      owner: col.owner,
-      type: 'nft-only'
+  const processedCollections = useMemo(() => {
+    if (!allCollections) return [];
+    const processed = (allCollections as string[]).map((address: string) => ({
+      address: address,
+      type: 'erc1155'
     }));
-    console.log('🔵 Processed NFT-Only Collections:', processed);
+    console.log('🟣 Processed Collections:', processed);
     return processed;
-  }, [nftOnlyCollections]);
+  }, [allCollections]);
 
   useEffect(() => {
-    if (!physicalNftCollections || !publicClient) return;
+    if (!allCollections || !publicClient) return;
     
     const fetchMetadata = async () => {
       setMetadataFetchStarted(true);
@@ -122,7 +140,7 @@ function Inner() {
         setIsLoadingMetadata(false);
       }, 10000); // 10 second timeout
       
-      for (const address of physicalNftCollections as string[]) {
+      for (const address of allCollections as string[]) {
         try {
           // Fetch collection details from the individual collection contract
           const [name, symbol, baseURI, maxSupply, mintPrice] = await Promise.all([
@@ -184,12 +202,12 @@ function Inner() {
     };
     
     fetchMetadata();
-  }, [physicalNftCollections, publicClient]);
+  }, [allCollections, publicClient]);
 
   const processedPhysicalNft = useMemo(() => {
-    if (!physicalNftCollections) return [];
+    if (!allCollections) return [];
     // ERC1155 factory returns just addresses, not full collection info
-    const processed = (physicalNftCollections as string[]).map((address: string) => {
+    const processed = (allCollections as string[]).map((address: string) => {
       const metadata = physicalNftMetadata[address];
       return {
         address: address,
@@ -205,15 +223,15 @@ function Inner() {
     console.log('🟣 Processed Physical+NFT Collections:', processed);
     console.log('🟣 Metadata available for:', Object.keys(physicalNftMetadata).length, 'collections');
     return processed;
-  }, [physicalNftCollections, physicalNftMetadata]);
+  }, [allCollections, physicalNftMetadata]);
 
   /* filter by keyword (memoised) */
-  const filteredNftOnly = useMemo(() => {
-    if (!keyword) return processedNftOnly;
-    return processedNftOnly.filter((col) =>
+  const filteredCollections = useMemo(() => {
+    if (!keyword) return processedPhysicalNft;
+    return processedPhysicalNft.filter((col) =>
       col.name?.toLowerCase().includes(keyword)
     );
-  }, [keyword, processedNftOnly]);
+  }, [keyword, processedPhysicalNft]);
 
   const filteredPhysicalNft = useMemo(() => {
     if (!keyword) return processedPhysicalNft;
@@ -224,9 +242,13 @@ function Inner() {
 
   /* early returns */
   if (loading)          return <FullPageLoader message="Loading collections…" />;
-  if (!nftOnlyLoading && !physicalNftLoading && processedNftOnly.length === 0 && processedPhysicalNft.length === 0)
+  if (!CONTRACTS.factoryERC1155) 
+    return <Empty>Contract address not configured. Please set NEXT_PUBLIC_FACTORY_ADDRESS_ERC1155 environment variable.</Empty>;
+  if (collectionsError) 
+    return <Empty>Error loading collections: {collectionsError.message}</Empty>;
+  if (!collectionsLoading && processedPhysicalNft.length === 0)
     return <Empty>No collections yet.</Empty>;
-  if (keyword && filteredNftOnly.length === 0 && filteredPhysicalNft.length === 0)
+  if (keyword && filteredCollections.length === 0)
     return <Empty>No collections found for "{keyword}".</Empty>;
 
   /* ---------------- main render ---------------- */
@@ -258,7 +280,7 @@ function Inner() {
               Featured Collections
             </span>
             <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-black font-bold text-xs">
-              {(filteredNftOnly.length + filteredPhysicalNft.length)}
+              {filteredCollections.length}
             </Badge>
           </div>
 
@@ -273,53 +295,22 @@ function Inner() {
           </h1>
         </div>
 
-        {/* NFT-Only Collections Section */}
-        {filteredNftOnly.length > 0 && (
-          <div className="mb-16">
-            <div className="flex items-center space-x-3 mb-8">
-              <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-              <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-                Digital NFT Collections
-              </h2>
-              <Badge className="bg-gradient-to-r from-blue-500 to-cyan-500 text-white font-bold text-xs">
-                {filteredNftOnly.length}
-              </Badge>
-            </div>
-            <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-              {filteredNftOnly.map((col, i) => (
-                <div
-                  key={col.address}
-                  className="animate-fade-in-up"
-                  style={{ animationDelay: `${i * 0.1}s` }}
-                >
-                  <CollectionCard
-                    address={col.address}
-                    preview={CONTRACTS.collectionPreview(col.address)}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Physical + NFT Collections Section */}
-        {filteredPhysicalNft.length > 0 && (
+        {/* Collections Section */}
+        {filteredCollections.length > 0 && (
           <div className="mb-16">
             <div className="flex items-center space-x-3 mb-8">
               <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
                 <Sparkles className="w-4 h-4 text-white" />
               </div>
               <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Card + NFT Collections
+                Collections
               </h2>
               <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-xs">
-                {filteredPhysicalNft.length}
+                {filteredCollections.length}
               </Badge>
             </div>
             <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-              {filteredPhysicalNft.map((col, i) => (
+              {filteredCollections.map((col, i) => (
                 <div
                   key={col.address}
                   className="animate-fade-in-up"

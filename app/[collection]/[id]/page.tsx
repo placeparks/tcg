@@ -39,9 +39,9 @@ function Inner() {
         const listing   = (await client.readContract({
           address:       CONTRACTS.marketplace,
           abi:           CONTRACTS.marketplaceAbi,
-          functionName:  "listings",
+          functionName:  "listings1155",
           args:          [collection, tokenId],
-        })) as { price: bigint };
+        })) as readonly [`0x${string}`, bigint, bigint];
 
         const uri       = (await client.readContract({
           address:       collection,
@@ -55,7 +55,7 @@ function Inner() {
         setNft({
           collection,
           id:     Number(id),
-          price:  listing.price,
+          price:  listing[1], // price is the second element (index 1) in the tuple
           metadata,
         });
       } catch (err) {

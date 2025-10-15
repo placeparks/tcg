@@ -19,6 +19,7 @@ import { useParams } from 'next/navigation'
 // ERC1155 ABIs
 const WRITE_ABI_ERC1155 = ['function redeemWithCode(string) payable']
 const READ_ABI_ERC1155  = ['function usedCodes(bytes32) view returns (bool)']
+const READ_ABI_ERC721   = ['function usedCodes(bytes32) view returns (bool)']
 
 const CHAIN_DEC = 84532
 const CHAIN_HEX = '0x14A34'

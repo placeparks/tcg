@@ -398,6 +398,20 @@ export const CONTRACTS = {
       outputs: [{ type: "string" }],
     },
     {
+      name: "name",
+      type: "function",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ type: "string" }],
+    },
+    {
+      name: "symbol",
+      type: "function",
+      stateMutability: "view",
+      inputs: [],
+      outputs: [{ type: "string" }],
+    },
+    {
       name: "maxSupply",
       type: "function",
       stateMutability: "view",
@@ -737,25 +751,32 @@ export const CONTRACTS = {
 
   factoryERC1155Abi: [
     {
-      name: "getAllCollections",
-      type: "function",
-      stateMutability: "view",
-      inputs: [],
-      outputs: [{ type: "address[]" }],
-    },
-    {
-      name: "getUserCollections",
-      type: "function",
-      stateMutability: "view",
-      inputs: [{ type: "address" }],
-      outputs: [{ type: "address[]" }],
-    },
-    {
       name: "totalCollections",
       type: "function",
       stateMutability: "view",
       inputs: [],
       outputs: [{ type: "uint256" }],
+    },
+    {
+      name: "collectionsOf",
+      type: "function",
+      stateMutability: "view",
+      inputs: [{ name: "creator", type: "address" }],
+      outputs: [{ type: "address[]" }],
+    },
+    {
+      name: "isCardifyCollection",
+      type: "function",
+      stateMutability: "view",
+      inputs: [{ name: "col", type: "address" }],
+      outputs: [{ type: "bool" }],
+    },
+    {
+      name: "allCollections",
+      type: "function",
+      stateMutability: "view",
+      inputs: [{ name: "index", type: "uint256" }],
+      outputs: [{ type: "address" }],
     },
     {
       name: "createCollection",
@@ -1003,8 +1024,8 @@ export const CONTRACTS = {
           "internalType": "uint256",
           "name": "id",
           "type": "uint256"
-        },
-        {
+    },
+    {
           "indexed": false,
           "internalType": "address",
           "name": "seller",
@@ -1028,7 +1049,7 @@ export const CONTRACTS = {
           "internalType": "address",
           "name": "previousOwner",
           "type": "address"
-        },
+    },
         {
           "indexed": true,
           "internalType": "address",
@@ -1414,6 +1435,163 @@ export const CONTRACTS = {
     {
       "stateMutability": "payable",
       "type": "receive"
+    },
+    {
+      "inputs": [],
+      "name": "getAllCollectionsWithInfo",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "collections",
+          "type": "address[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "names",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "symbols",
+          "type": "string[]"
+        },
+        {
+          "internalType": "string[]",
+          "name": "baseURIs",
+          "type": "string[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "maxSupplies",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "uint256[]",
+          "name": "mintPrices",
+          "type": "uint256[]"
+        },
+        {
+          "internalType": "address[]",
+          "name": "royaltyRecipients",
+          "type": "address[]"
+        },
+        {
+          "internalType": "uint96[]",
+          "name": "royaltyBps",
+          "type": "uint96[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "factories1155Count",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "collection",
+          "type": "address"
+        }
+      ],
+      "name": "isCardify1155",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "nft",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "buy721",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "nft",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint96",
+          "name": "price",
+          "type": "uint96"
+    },
+        {
+          "internalType": "uint96",
+          "name": "amount",
+          "type": "uint96"
+        }
+      ],
+      "name": "listItem721",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "nft",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "id",
+          "type": "uint256"
+        }
+      ],
+      "name": "cancelListing721",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "FEE_DENOMINATOR",
+      "outputs": [
+        {
+          "internalType": "uint96",
+          "name": "",
+          "type": "uint96"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
     }
   ] as const satisfies Abi,
 

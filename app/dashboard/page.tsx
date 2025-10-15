@@ -15,7 +15,6 @@ import NFTCard        from "@/components/NFTCard";
 import AlchemyNFTCard from "@/components/AlchemyNFTCard";
 import { CONTRACTS }  from "@/lib/contract";
 import { getNFTsForOwner, AlchemyNFT } from "@/lib/alchemy";
-import Link from "next/link";
 
 /* ─── constants ─── */
 const CHAIN_ID = 84532; // Base-Sepolia
@@ -39,28 +38,83 @@ export default function Dashboard() {
   });
 
   /* state */
-  const [busy,  setBusy]  = useState(true);
+  const [busy,  setBusy]  = useState(false); // Start as false, will be set to true when needed
   const [owned, setOwned] = useState<
     { collection: `0x${string}`; name: string; ids: bigint[] }[]
   >([]);
   const [alchemyNfts, setAlchemyNfts] = useState<AlchemyNFT[]>([]);
+  const [allCollections, setAllCollections] = useState<string[]>([]);
 
   // Fetch from both factory types
-  const { data: singleNftCollections = [], isPending: singleNftLoading, error: singleNftError } = useReadContract({
+  const { data: singleNftTotal, isPending: singleNftLoading, error: singleNftError } = useReadContract({
     address:      CONTRACTS.singleFactory as `0x${string}`,
     abi:          CONTRACTS.singleFactoryAbi,
-    functionName: "getAllCollectionsWithInfo",
+    functionName: "totalCollections",
     query:        { enabled: !!address },
   });
 
-  const { data: erc1155Collections = [], isPending: erc1155Loading, error: erc1155Error } = useReadContract({
+  const { data: erc1155Total, isPending: erc1155Loading, error: erc1155Error } = useReadContract({
     address:      CONTRACTS.factoryERC1155 as `0x${string}`,
     abi:          CONTRACTS.factoryERC1155Abi,
-    functionName: "getAllCollections",
+    functionName: "totalCollections",
     query:        { enabled: !!address },
   });
 
   const publicClient = usePublicClient({ chainId: 84532 });
+
+  // Fetch all collections when totals are available
+  useEffect(() => {
+    if (!publicClient || (!singleNftTotal && !erc1155Total)) return;
+    
+    const fetchAllCollections = async () => {
+      const collections: string[] = [];
+      
+      // Fetch single NFT collections
+      if (singleNftTotal && CONTRACTS.singleFactory) {
+        const count = Number(singleNftTotal as bigint);
+        console.log(`🔍 Fetching ${count} single NFT collections...`);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.singleFactory as `0x${string}`,
+              abi: CONTRACTS.singleFactoryAbi,
+              functionName: 'allCollections',
+              args: [BigInt(i)],
+            });
+            collections.push(address as string);
+          } catch (error) {
+            console.error(`Error fetching single NFT collection at index ${i}:`, error);
+          }
+        }
+      }
+      
+      // Fetch ERC1155 collections
+      if (erc1155Total && CONTRACTS.factoryERC1155) {
+        const count = Number(erc1155Total as bigint);
+        console.log(`🔍 Fetching ${count} ERC1155 collections...`);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.factoryERC1155 as `0x${string}`,
+              abi: CONTRACTS.factoryERC1155Abi,
+              functionName: 'allCollections',
+              args: [BigInt(i)],
+            });
+            collections.push(address as string);
+          } catch (error) {
+            console.error(`Error fetching ERC1155 collection at index ${i}:`, error);
+          }
+        }
+      }
+      
+      console.log('🔍 All collections fetched:', collections);
+      setAllCollections(collections);
+    };
+    
+    fetchAllCollections();
+  }, [singleNftTotal, erc1155Total, publicClient]);
 
   // Debug contract loading states
   console.log('🔍 Contract loading states:', {
@@ -68,8 +122,9 @@ export default function Dashboard() {
     erc1155Loading,
     singleNftError,
     erc1155Error,
-    singleNftCollections: singleNftCollections?.length || 0,
-    erc1155Collections: erc1155Collections?.length || 0,
+    singleNftTotal,
+    erc1155Total,
+    allCollectionsLength: allCollections.length,
     address,
     singleFactory: CONTRACTS.singleFactory,
     erc1155Factory: CONTRACTS.factoryERC1155
@@ -90,12 +145,8 @@ export default function Dashboard() {
     erc1155FactoryEnv: process.env.NEXT_PUBLIC_FACTORY_ADDRESS_ERC1155
   });
 
-  // Combine collections from both factories
-  const collections = useMemo(() => {
-    const singleNft = (singleNftCollections as any[])?.map((col: any) => col.collectionAddress) || [];
-    const erc1155 = (erc1155Collections as string[]) || [];
-    return [...singleNft, ...erc1155];
-  }, [singleNftCollections, erc1155Collections]);
+  // Use the fetched collections
+  const collections = allCollections;
 
 
   /* We'll use Alchemy data for collection names instead of contract calls */
@@ -121,6 +172,12 @@ export default function Dashboard() {
     }
 
     const load = async () => {
+      if (collections.length === 0) {
+        console.log('🔍 No collections available, skipping NFT load');
+        setBusy(false);
+        return;
+      }
+      
       setBusy(true);
       console.log('🔍 Starting NFT load for address:', address);
       console.log('🔍 Collections to filter:', collections);
@@ -308,7 +365,10 @@ export default function Dashboard() {
       }
     };
 
-    load();
+    load().catch((error) => {
+      console.error('❌ Unexpected error in load function:', error);
+      setBusy(false);
+    });
   }, [ready, address, collections]);
 
   /* ---------- UI states ---------- */
@@ -325,6 +385,20 @@ export default function Dashboard() {
   if (!ready) {
     console.log('🔍 Dashboard: Privy not ready');
     return <FullPageLoader message="Connecting wallet…" />;
+  }
+
+  if (singleNftError || erc1155Error) {
+    console.log('🔍 Dashboard: Contract errors', { singleNftError, erc1155Error });
+    return (
+      <div className="px-6 md:px-10 py-8">
+        <h1 className="text-3xl font-playfair font-bold text-zinc-400 mb-4">
+          Error Loading Collections
+        </h1>
+        <p className="text-red-400">
+          {singleNftError?.message || erc1155Error?.message || 'Failed to load collections'}
+        </p>
+      </div>
+    );
   }
 
   if (singleNftLoading) {
@@ -347,6 +421,18 @@ export default function Dashboard() {
       <p className="text-center mt-12 text-zinc-400">
         🔗 Connect your wallet to view NFTs.
       </p>
+    );
+
+  if (collections.length === 0)
+    return (
+      <div className="px-6 md:px-10 py-8">
+        <h1 className="text-3xl font-playfair font-bold text-zinc-400 mb-4">
+          No Collections Found
+        </h1>
+        <p className="text-zinc-400">
+          No collections are available from the factory contracts. Please check your contract configuration.
+        </p>
+      </div>
     );
 
   if (owned.length === 0)
@@ -380,13 +466,10 @@ export default function Dashboard() {
               );
               console.log(`🔍 Collection ${collection} NFTs:`, collectionNfts.length, collectionNfts);
               return collectionNfts.map((nft, index) => (
-                <Link
+                <AlchemyNFTCard 
                   key={nft.uniqueId || `${nft.contract.address}-${nft.tokenId}-${index}`}
-                  href={`/list/${nft.contract.address}/${nft.tokenId}`}
-                  className="block"
-                >
-                  <AlchemyNFTCard nft={nft} />
-                </Link>
+                  nft={nft} 
+                />
               ));
             })()}
           </div>

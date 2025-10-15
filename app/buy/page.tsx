@@ -38,7 +38,7 @@ const CHAIN_ID = 84532
 const ipfsToHttp = (u: string) => u.replace(/^ipfs:\/\//, "https://gateway.pinata.cloud/ipfs/")
 
 type ListingStruct = { seller: `0x${string}`; price: bigint }
-type Listing1155Tuple = readonly [`0x${string}`, bigint, bigint] // [seller, unitPrice, remaining]
+type Listing1155Tuple = readonly [`0x${string}`, bigint] // [seller, unitPrice]
 
 export default function BuyPage() {
   useEnsureBaseSepolia(); 
@@ -54,42 +54,75 @@ const { switchChainAsync } = useSwitchChain();
   /* live balance */
   const { data: balanceData } = useBalance({ address, chainId: CHAIN_ID })
 
-  /* collections - fetch from multiple factories */
-  const { data: rawCollections1 } = useReadContract({
-    address: CONTRACTS.singleFactory,
-    abi: CONTRACTS.singleFactoryAbi,
-    functionName: "getAllCollectionsWithInfo",
-  })
-
-  const { data: rawCollections2 } = useReadContract({
+  /* collections - fetch from both factories */
+  const { data: totalCollectionsERC1155 } = useReadContract({
     address: CONTRACTS.factoryERC1155,
     abi: CONTRACTS.factoryERC1155Abi,
-    functionName: "getAllCollections",
+    functionName: "totalCollections",
   })
 
-  // Combine collections from all factories
-  const collections = useMemo(() => {
-    const allCollections: string[] = [];
+  const { data: totalCollectionsSingle } = useReadContract({
+    address: CONTRACTS.singleFactory,
+    abi: CONTRACTS.singleFactoryAbi,
+    functionName: "totalCollections",
+  })
+
+  // State for collections
+  const [collections, setCollections] = useState<string[]>([])
+
+  // Fetch all collections by index when total count is available
+  useEffect(() => {
+    if ((!totalCollectionsERC1155 && !totalCollectionsSingle) || !publicClient) return;
     
-    // From singleFactory (returns objects with collectionAddress)
-    if (rawCollections1) {
-      const collections1 = (rawCollections1 as any[])?.map((col: any) => col.collectionAddress) ?? [];
-      allCollections.push(...collections1);
-      console.log('🏭 Collections from singleFactory:', collections1);
-    }
+    const fetchCollections = async () => {
+      const collectionsList: string[] = [];
+      
+      // Fetch from ERC1155 factory
+      if (totalCollectionsERC1155) {
+        const count = Number(totalCollectionsERC1155 as bigint);
+        console.log('🔍 Fetching ERC1155 collections:', count);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.factoryERC1155 as `0x${string}`,
+              abi: CONTRACTS.factoryERC1155Abi,
+              functionName: "allCollections",
+              args: [BigInt(i)],
+            });
+            collectionsList.push(address as string);
+          } catch (error) {
+            console.error(`Error fetching ERC1155 collection at index ${i}:`, error);
+          }
+        }
+      }
+      
+      // Fetch from Single factory
+      if (totalCollectionsSingle) {
+        const count = Number(totalCollectionsSingle as bigint);
+        console.log('🔍 Fetching Single factory collections:', count);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.singleFactory as `0x${string}`,
+              abi: CONTRACTS.singleFactoryAbi,
+              functionName: "allCollections",
+              args: [BigInt(i)],
+            });
+            collectionsList.push(address as string);
+          } catch (error) {
+            console.error(`Error fetching Single factory collection at index ${i}:`, error);
+          }
+        }
+      }
+      
+      console.log('🏭 Fetched All Collections:', collectionsList);
+      setCollections(collectionsList);
+    };
     
-    // From factoryERC1155 (returns addresses directly)
-    if (rawCollections2) {
-      const collections2 = rawCollections2 as string[] ?? [];
-      allCollections.push(...collections2);
-      console.log('🏭 Collections from factoryERC1155:', collections2);
-    }
-    
-    // Remove duplicates
-    const uniqueCollections = [...new Set(allCollections)];
-    console.log('🎯 All unique collections:', uniqueCollections);
-    return uniqueCollections;
-  }, [rawCollections1, rawCollections2])
+    fetchCollections();
+  }, [totalCollectionsERC1155, totalCollectionsSingle, publicClient]);
 
   /* listings state */
   const [listedNFTs, setListedNFTs] = useState<any[]>([])
@@ -97,10 +130,19 @@ const { switchChainAsync } = useSwitchChain();
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const inFlight = useRef(false)
   const lastFetchedCollections = useRef<string>('')
+  const fetchTimeout = useRef<NodeJS.Timeout | null>(null)
 
 /* ─────────── fast, dependency-free fetcher ─────────── */
 const fetchListings = useCallback(async () => {
   if (inFlight.current) return;        // prevent overlap without deadlock
+  
+  // Clear any existing timeout
+  if (fetchTimeout.current) {
+    clearTimeout(fetchTimeout.current);
+  }
+  
+  // Debounce the fetch to prevent rapid successive calls
+  fetchTimeout.current = setTimeout(async () => {
   inFlight.current = true;
   try {
     setLoading(true);
@@ -140,9 +182,10 @@ const fetchListings = useCallback(async () => {
       const total = supplies[idx] ?? 0n;
         if (total === 0n) return;
 
-        // ⚠ if you only list tokenId 0 for now, keep this. Otherwise expand to 0..total-1
-        const tokensToCheck = [0];
-        const listings: Listing1155Tuple[] = [];
+        // Check a reasonable range of token IDs (limit to first 100 to prevent infinite loops)
+        const maxTokensToCheck = Math.min(Number(total), 100);
+        const tokensToCheck = Array.from({ length: maxTokensToCheck }, (_, i) => i);
+        const listings: [string, bigint][] = [];
         
         for (const i of tokensToCheck) {
           try {
@@ -151,11 +194,11 @@ const fetchListings = useCallback(async () => {
             abi: CONTRACTS.marketplaceAbi,
               functionName: "listings1155",
               args: [col as `0x${string}`, BigInt(i)],
-            }) as Listing1155Tuple;
+            }) as [string, bigint];
             listings.push(listing);
             console.log(`✅ Listing for ${col} token ${i}:`, listing);
           } catch {
-            listings.push(["0x0000000000000000000000000000000000000000", 0n, 0n]);
+            listings.push(["0x0000000000000000000000000000000000000000", 0n]);
           }
         }
 
@@ -218,11 +261,12 @@ const fetchListings = useCallback(async () => {
 
     console.log(`🎉 Fetch completed! Found ${items.length} listed NFTs:`, items);
   setListedNFTs(items);
-  } finally {
-    inFlight.current = false;
-  setLoading(false);
-  }
-}, [publicClient, collections]);   // ← include collections here
+    } finally {
+      inFlight.current = false;
+      setLoading(false);
+    }
+  }, 500); // 500ms debounce
+}, [publicClient, collections]);
 
 /* ─────────── trigger fetch whenever collections change ─────────── */
 useEffect(() => {
@@ -271,13 +315,11 @@ async function buyNFT(
     });
     console.log('📋 Current listing:', listing);
     
-    const [seller, unitPrice, remaining] = listing as [string, bigint, bigint];
-    console.log('📋 Listing details:', { seller, unitPrice, remaining });
+    const [seller, unitPrice] = listing as [string, bigint];
+    console.log('📋 Listing details:', { seller, unitPrice });
     
-    if (remaining === 0n) {
-      toast.error('This NFT is no longer available for sale');
-      return;
-    }
+    // For ERC1155, we assume remaining is always 1 (single item listing)
+    const remaining = 1n;
     
     if (unitPrice !== price) {
       toast.error(`Price mismatch: expected ${unitPrice}, got ${price}`);
@@ -289,34 +331,9 @@ async function buyNFT(
     return;
   }
   
-  // Check if the collection is recognized as a Cardify collection
-  try {
-    // First, let's check what factories are registered
-    const factoriesCount = await publicClient.readContract({
-      address: CONTRACTS.marketplace,
-      abi: CONTRACTS.marketplaceAbi,
-      functionName: "factories1155Count",
-    });
-    console.log('🏭 Registered 1155 factories count:', factoriesCount);
-    
-    // Check if this specific collection is recognized
-    const isCardify1155 = await publicClient.readContract({
-      address: CONTRACTS.marketplace,
-      abi: CONTRACTS.marketplaceAbi,
-      functionName: "isCardify1155",
-      args: [collection],
-    });
-    console.log('🔍 Is Cardify1155 collection:', isCardify1155);
-    
-    if (!isCardify1155) {
-      toast.error('This collection is not registered with the marketplace. Please ensure the factory is registered.');
-      return;
-    }
-  } catch (err) {
-    console.log('❌ Failed to check if collection is Cardify1155:', err);
-    toast.error('Failed to verify collection registration');
-    return;
-  }
+  // Skip collection validation since we already validated during listing
+  // The marketplace will handle validation during the transaction
+  console.log('🔍 Skipping collection validation - already validated during listing');
 
 // wait until the wallet really switched
 const waitForChain = (target: number) =>
@@ -402,7 +419,7 @@ const waitForChain = (target: number) =>
       functionName: "listings1155",
       args: [collection, BigInt(id)],
     });
-    const [seller] = listing as [string, bigint, bigint];
+    const [seller] = listing as [string, bigint];
     
     const sellerBalance = await publicClient.readContract({
       address: collection as `0x${string}`,
@@ -455,7 +472,7 @@ const waitForChain = (target: number) =>
       functionName: "listings1155",
       args: [collection, BigInt(id)],
     });
-    const [seller] = listing as [string, bigint, bigint];
+    const [seller] = listing as [string, bigint];
     
     // Try to simulate a direct safeTransferFrom call
     try {
@@ -490,13 +507,15 @@ const waitForChain = (target: number) =>
     console.log('🔍 Running preflight checks...');
     
     // 0) Get the seller from the listing
-    const [seller, unitPrice, remaining] = await publicClient.readContract({
+    const [seller, unitPrice] = await publicClient.readContract({
       address: CONTRACTS.marketplace,
       abi: CONTRACTS.marketplaceAbi,
       functionName: "listings1155",
       args: [collection, BigInt(id)],
-    }) as [`0x${string}`, bigint, bigint];
+    }) as readonly [`0x${string}`, bigint];
     
+    // For ERC1155, we assume remaining is always 1 (single item listing)
+    const remaining = 1n;
     console.log('📋 Listing details:', { seller, unitPrice, remaining });
     
     // 1) Check if seller has approved the marketplace
@@ -625,6 +644,14 @@ const waitForChain = (target: number) =>
   /* 5️⃣ send the tx */
   toast.loading('Buying NFT…');
   try {
+    console.log('🔍 Sending buy1155 transaction with params:', {
+      collection,
+      id,
+      amount: 1n,
+      value: price,
+      marketplace: CONTRACTS.marketplace
+    });
+    
     const hash = await writeContractAsync({
       address:      CONTRACTS.marketplace,
       abi:          CONTRACTS.marketplaceAbi,
@@ -632,6 +659,8 @@ const waitForChain = (target: number) =>
       args:         [collection, BigInt(id), 1n], // amount = 1 for ERC1155
       value:        price,
     });
+
+    console.log('✅ Transaction submitted:', hash);
 
     /* optimistic UI update */
     setListedNFTs(prev =>
@@ -643,8 +672,28 @@ const waitForChain = (target: number) =>
     toast.dismiss();
     toast.success('NFT purchased!');
   } catch (err: any) {
+    console.error('❌ Buy transaction failed:', err);
     toast.dismiss();
-    toast.error(err?.shortMessage || 'Buy failed');
+    
+    // Try to decode the error for better user feedback
+    let errorMessage = 'Buy failed';
+    try {
+      if (err?.data?.data) {
+        const decoded = decodeErrorResult({
+          abi: CONTRACTS.marketplaceAbi,
+          data: err.data.data as `0x${string}`,
+        });
+        errorMessage = `Transaction failed: ${decoded.errorName}`;
+        console.log('🔍 Decoded error:', decoded);
+      } else {
+        errorMessage = err?.shortMessage || err?.message || 'Buy failed';
+      }
+    } catch (decodeErr) {
+      console.log('❌ Failed to decode error:', decodeErr);
+      errorMessage = err?.shortMessage || err?.message || 'Buy failed';
+    }
+    
+    toast.error(errorMessage);
   }
 }
 /* ─────────────────────────────────────────────────────────── */
