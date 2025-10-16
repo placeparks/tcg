@@ -150,7 +150,7 @@ function Inner() {
   }, [erc1155Total, singleNftTotal, publicClient]);
 
   /* flags */
-  const loading = !ready || erc1155Loading || singleNftLoading || (allCollections && allCollections.length > 0 && !metadataFetchStarted) || isLoadingMetadata;
+  const loading = !ready || erc1155Loading || singleNftLoading || isLoadingMetadata;
 
   /* process collections data */
   const processedCollections = useMemo(() => {
@@ -303,114 +303,24 @@ function Inner() {
 
   /* ---------------- main render ---------------- */
   return (
-    <div className="min-h-screen bg-black relative overflow-hidden">
-      {/* ⭐ animated gradient backdrop (unchanged) */}
-      <div className="fixed inset-0 z-0">
-        <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-black to-pink-900/20" />
-        <div className="absolute w-96 h-96 bg-purple-500/20 rounded-full blur-3xl top-1/4 left-1/4 animate-pulse" />
-        <div
-          className="absolute w-64 h-64 bg-pink-500/20 rounded-full blur-3xl bottom-1/4 right-1/4 animate-pulse"
-          style={{ animationDelay: "2s" }}
-        />
-        <div
-          className="absolute w-80 h-80 bg-blue-500/20 rounded-full blur-3xl top-3/4 left-1/2 animate-pulse"
-          style={{ animationDelay: "4s" }}
-        />
-        <div className="absolute top-1/4 right-1/4 w-2 h-2 bg-white rounded-full animate-ping" />
-        <div className="absolute top-3/4 left-1/4 w-1 h-1 bg-purple-400 rounded-full animate-pulse" />
-        <div className="absolute top-1/2 right-1/3 w-1.5 h-1.5 bg-pink-400 rounded-full animate-bounce" />
-      </div>
-
-      <div className="relative z-10 container mx-auto px-6 py-20">
-        {/* header */}
-        <div className="text-center mb-16">
-          <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-xl border border-white/20 rounded-full px-6 py-2 mb-8">
-            <Sparkles className="w-4 h-4 text-purple-400 animate-spin" />
-            <span className="text-sm font-medium text-gray-300">
-              TCG Meta Marketplace
-            </span>
-            <Badge className="bg-gradient-to-r from-green-500 to-emerald-500 text-black font-bold text-xs">
-              {filteredCollections.length}
-            </Badge>
-          </div>
-
-          <h1 className="text-6xl md:text-8xl font-serif font-black mb-6 leading-tight">
-            <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
-              Explore
-            </span>
-            <br />
-            <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent animate-pulse">
-              AI-Generated
-            </span>
-            <br />
-            <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
-              Trading Cards
-            </span>
-          </h1>
-          <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-12 leading-relaxed">
-            Dive into a marketplace where design meets rarity and every card is a collectible masterpiece.
-          </p>
-        </div>
-
-        {/* Collection Types */}
-        <div className="mb-6 flex gap-4 justify-center">
-          <div className="bg-gradient-to-r from-blue-500/20 to-cyan-500/20 backdrop-blur-xl border border-blue-500/30 rounded-lg px-4 py-2">
-            <span className="text-blue-400 text-sm font-medium">
-              Single Cards: {filteredCollections.filter(c => c.type === 'single').length}
-            </span>
-          </div>
-          <div className="bg-gradient-to-r from-orange-500/20 to-red-500/20 backdrop-blur-xl border border-orange-500/30 rounded-lg px-4 py-2">
-            <span className="text-orange-400 text-sm font-medium">
-              Card Packs (Hybrid): {filteredCollections.filter(c => c.type === 'erc1155').length}
-            </span>
-          </div>
-        </div>
-
-        {/* Collections Section */}
+    <div className="min-h-screen bg-black">
+      <div className="container mx-auto px-6 py-20">
+        <h1 className="text-3xl font-bold text-white mb-8">Collections</h1>
+        
         {filteredCollections.length > 0 && (
-          <div className="mb-16">
-            <div className="flex items-center space-x-3 mb-8">
-              <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg flex items-center justify-center">
-                <Sparkles className="w-4 h-4 text-white" />
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredCollections.map((col, i) => (
+              <div key={col.address}>
+                <CollectionCard
+                  address={col.address}
+                  preview={CONTRACTS.collectionPreview(col.address)}
+                  type={col.type}
+                />
               </div>
-              <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Collections
-              </h2>
-              <Badge className="bg-gradient-to-r from-purple-500 to-pink-500 text-white font-bold text-xs">
-                {filteredCollections.length}
-              </Badge>
-            </div>
-            <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-              {filteredCollections.map((col, i) => (
-                <div
-                  key={col.address}
-                  className="animate-fade-in-up"
-                  style={{ animationDelay: `${i * 0.1}s` }}
-                >
-                  <CollectionCard
-                    address={col.address}
-                    preview={CONTRACTS.collectionPreview(col.address)}
-                    type={col.type}
-                  />
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
         )}
-
       </div>
-
-      {/* neat little fade-up animation utility */}
-      <style jsx>{`
-        @keyframes fade-in-up {
-          from { opacity: 0; transform: translateY(30px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in-up {
-          animation: fade-in-up 0.6s ease-out forwards;
-          opacity: 0;
-        }
-      `}</style>
     </div>
   );
 }
