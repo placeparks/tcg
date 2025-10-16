@@ -44,7 +44,7 @@ export default function NFTMarketplace() {
   /* ------------------------------------------------------------------ */
   const scenes = useMemo(
     () => [
-      { title: "Marketplace Trading Cards", src: "/clip2.mp4", poster: "/clip2.mp4", hint: "Scroll for AI-Generated" },
+      { title: "Marketplace", subtitle: "Trading Cards NFT", src: "/clip2.mp4", poster: "/clip2.mp4", hint: "Scroll for AI-Generated" },
       { title: "NFT",           src: "/clip3.mp4", poster: "/clip3.mp4", hint: "Scroll for Trading Cards" },
       { title: "Exchange",      src: "/clip4.mp4", poster: "/clip4.mp4", hint: "Scroll to continue"     },
     ],
@@ -383,6 +383,13 @@ export default function NFTMarketplace() {
                 >
                   {sc.title}
                 </span>
+                {i === 0 && sc.subtitle && (
+                  <div className="mt-2 text-2xl sm:text-4xl md:text-5xl font-light">
+                    <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent">
+                      {sc.subtitle}
+                    </span>
+                  </div>
+                )}
               </h1>
 
               <p className="mt-8 text-base sm:text-xl md:text-2xl text-white/95 max-w-3xl mx-auto">
