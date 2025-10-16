@@ -1,6 +1,6 @@
 "use client"
 
-import { Sparkles } from "lucide-react"
+import { Sparkles, Twitter, MessageCircle } from "lucide-react"
 
 export default function Footer() {
   return (
@@ -21,42 +21,79 @@ export default function Footer() {
               </div>
             </div>
             <p className="text-gray-400 text-lg leading-relaxed mb-6">
-              The premier destination for discovering, creating, and trading extraordinary NFTs in the metaverse.
+              The premier destination for discovering, creating, and trading extraordinary card NFTs.
             </p>
             <div className="flex space-x-4">
-              {["Twitter", "Discord", "Instagram"].map((social) => (
-                <div
-                  key={social}
-                  className="w-10 h-10 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
-                >
-                  <div className="w-4 h-4 bg-gradient-to-r from-purple-400 to-pink-400 rounded-full" />
-                </div>
-              ))}
+              <a
+                href="https://x.com/NickPlaysCrypto"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-10 h-10 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
+              >
+                <Twitter className="w-5 h-5 text-white" />
+              </a>
+              <a
+                href="https://discord.com/invite/nickplayscrypto"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-10 h-10 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
+              >
+                <MessageCircle className="w-5 h-5 text-white" />
+              </a>
             </div>
           </div>
 
           {/* Link Columns */}
-          {[
-            { title: "Marketplace", items: ["Explore", "Create", "Collections", "Rankings"] },
-            { title: "Resources", items: ["Help Center", "Blog", "Newsletter", "API"] },
-            { title: "Company", items: ["About", "Careers", "Privacy", "Terms"] },
-          ].map((column, index) => (
-            <div key={index}>
-              <h4 className="text-white font-bold text-lg mb-6">{column.title}</h4>
-              <ul className="space-y-3">
-                {column.items.map((item) => (
-                  <li key={item}>
-                    <a
-                      href="#"
-                      className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
-                    >
-                      {item}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          <div>
+            <h4 className="text-white font-bold text-lg mb-6">Marketplace</h4>
+            <ul className="space-y-3">
+              <li>
+                <a
+                  href="/mint-now"
+                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                >
+                  Explore
+                </a>
+              </li>
+              <li>
+                <a
+                  href="/collection"
+                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                >
+                  Collections
+                </a>
+              </li>
+            </ul>
+          </div>
+          <div>
+            <h4 className="text-white font-bold text-lg mb-6">Company</h4>
+            <ul className="space-y-3">
+              <li>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                >
+                  About
+                </a>
+              </li>
+              <li>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                >
+                  Privacy
+                </a>
+              </li>
+              <li>
+                <a
+                  href="#"
+                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                >
+                  Terms
+                </a>
+              </li>
+            </ul>
+          </div>
         </div>
 
         {/* Bottom Bar */}
@@ -64,11 +101,7 @@ export default function Footer() {
           <p className="text-gray-400 mb-4 md:mb-0">
             &copy; 2025 TCG Meta. All rights reserved. Made with ❤️ for the NFT community.
           </p>
-          <div className="flex items-center space-x-6 text-sm text-gray-400">
-            <span>🌍 Available worldwide</span>
-            <span>⚡ Powered by blockchain</span>
-          </div>
-        </div>
+               </div>
       </div>
     </footer>
   )
