@@ -43,6 +43,9 @@ export default function Dashboard() {
   >([]);
   const [alchemyNfts, setAlchemyNfts] = useState<AlchemyNFT[]>([]);
   const [allCollections, setAllCollections] = useState<string[]>([]);
+  
+  // Add a small delay to prevent flash of "No NFTs" message
+  const [showContent, setShowContent] = useState(false);
 
   // Fetch from both factory types
   const { data: singleNftTotal, isPending: singleNftLoading, error: singleNftError } = useReadContract({
@@ -146,6 +149,15 @@ export default function Dashboard() {
 
   // Use the fetched collections
   const collections = allCollections;
+
+  // Add delay to prevent flash of "No NFTs" message
+  useEffect(() => {
+    const loading = singleNftLoading || erc1155Loading || busy;
+    if (!loading) {
+      const timer = setTimeout(() => setShowContent(true), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [singleNftLoading, erc1155Loading, busy]);
 
 
   /* We'll use Alchemy data for collection names instead of contract calls */
@@ -400,18 +412,8 @@ export default function Dashboard() {
     );
   }
 
-  if (singleNftLoading) {
-    console.log('🔍 Dashboard: Single NFT collections loading');
-    return <FullPageLoader message="Loading single NFT collections…" />;
-  }
-
-  if (erc1155Loading) {
-    console.log('🔍 Dashboard: ERC1155 collections loading');
-    return <FullPageLoader message="Loading ERC1155 collections…" />;
-  }
-
-  if (busy) {
-    console.log('🔍 Dashboard: NFT data loading');
+  if (singleNftLoading || erc1155Loading || busy || !showContent) {
+    console.log('🔍 Dashboard: Loading or not showing content yet');
     return <FullPageLoader message="Loading NFTs…" />;
   }
 
