@@ -38,7 +38,9 @@ const nameAbi = [
 /* -------------------- Stateless fall-back UI bits ----------------- */
 const Empty = ({ children }: { children: React.ReactNode }) => (
   <div className="min-h-screen flex items-center justify-center text-white">
-    {children}
+    <div className="text-center">
+      {children}
+    </div>
   </div>
 );
 
@@ -288,7 +290,14 @@ function Inner() {
   if (erc1155Error || singleNftError) 
     return <Empty>Error loading collections: {erc1155Error?.message || singleNftError?.message}</Empty>;
   if (!erc1155Loading && !singleNftLoading && processedPhysicalNft.length === 0)
-    return <Empty>No collections yet.</Empty>;
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-white mb-4">No Collections Yet</h1>
+          <p className="text-gray-400">No collections are available from the factory contracts.</p>
+        </div>
+      </div>
+    );
   if (keyword && filteredCollections.length === 0)
     return <Empty>No collections found for "{keyword}".</Empty>;
 
@@ -325,17 +334,21 @@ function Inner() {
             </Badge>
           </div>
 
-          <h1 className="text-5xl md:text-5xl font-black mb-6 leading-tight">
+          <h1 className="text-6xl md:text-8xl font-serif font-black mb-6 leading-tight">
             <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
-              Cardify
+              Explore
             </span>
             <br />
             <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent animate-pulse">
-              Collections
+              AI-Generated
+            </span>
+            <br />
+            <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
+              Trading Cards
             </span>
           </h1>
-          <p className="text-lg text-gray-300 max-w-2xl mx-auto mb-8">
-            Discover and trade NFT collections launched on Cardify. Buy, sell, and mint your favorite TCG cards.
+          <p className="text-xl text-gray-300 max-w-3xl mx-auto mb-12 leading-relaxed">
+            Dive into a marketplace where design meets rarity and every card is a collectible masterpiece.
           </p>
         </div>
 
