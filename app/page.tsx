@@ -6,19 +6,28 @@ import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
 export default function NFTMarketplace() {
+  /* ------------------------------------------------------------------ */
+  /* State & refs                                                        */
+  /* ------------------------------------------------------------------ */
   const [isWalletConnected, setIsWalletConnected] = useState(false)
-  const [active, setActive] = useState(0)
-  const [hasSpun, setHasSpun] = useState(false)
-  const [mouse, setMouse] = useState({ x: 0, y: 0 })
+  const [active,            setActive]            = useState(0)
+  const [hasSpun,           setHasSpun]           = useState(false)
+  const [mouse,             setMouse]             = useState({ x: 0, y: 0 })
 
-  // Prevent mobile bounce without locking body scroll
+  const sectionRefs = useRef<Array<HTMLElement | null>>([])
+  const videoRefs   = useRef<Array<HTMLVideoElement | null>>([])
+  const scrollRef   = useRef<HTMLDivElement | null>(null)
+
+  /* ------------------------------------------------------------------ */
+  /* Input / sensor effects                                             */
+  /* ------------------------------------------------------------------ */
   useEffect(() => {
-    const prevOverscrollBehavior = document.body.style.overscrollBehavior
+    const prev = document.body.style.overscrollBehavior
     document.documentElement.style.overscrollBehavior = "none"
-    document.body.style.overscrollBehavior = "none"
+    document.body.style.overscrollBehavior            = "none"
     return () => {
       document.documentElement.style.overscrollBehavior = ""
-      document.body.style.overscrollBehavior = prevOverscrollBehavior
+      document.body.style.overscrollBehavior            = prev
     }
   }, [])
 
@@ -29,115 +38,79 @@ export default function NFTMarketplace() {
     return () => window.removeEventListener("mousemove", onMove)
   }, [])
 
-  const handleConnectWallet = () => setIsWalletConnected(v => !v)
-
+  /* ------------------------------------------------------------------ */
+  /* Demo data                                                          */
+  /* ------------------------------------------------------------------ */
   const scenes = useMemo(
     () => [
       { title: "Trading Cards", src: "/clip2.mp4", hint: "Scroll for AI-Generated" },
       { title: "NFT",           src: "/clip3.mp4", hint: "Scroll for Trading Cards" },
-      { title: "Exchange",      src: "/clip4.mp4", hint: "Scroll to continue" },
+      { title: "Exchange",      src: "/clip4.mp4", hint: "Scroll to continue"     },
     ],
     []
   )
 
-  const sectionRefs = useRef<Array<HTMLElement | null>>([])
-  const videoRefs   = useRef<Array<HTMLVideoElement | null>>([])
-  const scrollRef   = useRef<HTMLDivElement | null>(null)
-
-  // Play first video immediately
+  /* ------------------------------------------------------------------ */
+  /* Autoplay the first video                                           */
+  /* ------------------------------------------------------------------ */
   useEffect(() => {
     const v0 = videoRefs.current[0]
-    if (v0) {
-      v0.classList.add("video-fade-in")
-      v0.play().catch(() => {})
-    }
+    v0?.classList.add("video-fade-in")
+    v0?.play().catch(() => {})
   }, [])
 
-  // Touch handling - minimal to allow normal scrolling
-  useEffect(() => {
-    const scrollElement = scrollRef.current
-    if (!scrollElement) return
-
-    // Only prevent bounce at the very edges
-    const handleTouchMove = (e: TouchEvent) => {
-      const el = e.currentTarget as HTMLElement
-      const isAtTop = el.scrollTop <= 0
-      const isAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight
-      const isScrollingUp = e.touches[0].clientY > 0
-      const isScrollingDown = e.touches[0].clientY < 0
-      
-      // Only prevent default if trying to scroll beyond boundaries
-      if ((isAtTop && isScrollingUp) || (isAtBottom && isScrollingDown)) {
-        e.preventDefault()
-      }
-    }
-
-    scrollElement.addEventListener("touchmove", handleTouchMove, { passive: false })
-    
-    return () => {
-      scrollElement.removeEventListener("touchmove", handleTouchMove)
-    }
-  }, [])
-
-  // Scroll + intersection logic
+  /* ------------------------------------------------------------------ */
+  /* Scroll + IO logic                                                  */
+  /* ------------------------------------------------------------------ */
   useEffect(() => {
     const rootEl = scrollRef.current
     if (!rootEl) return
 
     const handleScroll = () => {
-      const scrollTop = rootEl.scrollTop
-      const viewportHeight = window.innerHeight
-      
+      const y   = rootEl.scrollTop
+      const vh  = window.innerHeight
       sectionRefs.current.forEach((el, idx) => {
         if (!el) return
-        const textContainer = el.querySelector(".text-container") as HTMLElement | null
-        if (textContainer) {
-          const sectionTop = idx * viewportHeight
-          const sectionCenter = sectionTop + viewportHeight / 2
-          const distanceFromCenter = Math.abs(scrollTop + viewportHeight / 2 - sectionCenter)
-          const maxDistance = viewportHeight / 2
-          const sectionProgress = Math.max(0, 1 - distanceFromCenter / maxDistance)
-          
-          const scale = 0.7 + sectionProgress * 0.5
-          const opacity = 0.55 + sectionProgress * 0.45
-          const translateY = (1 - sectionProgress) * 100
-          
-          textContainer.style.transform = `scale(${scale}) translateY(${translateY}px)`
-          textContainer.style.opacity = `${opacity}`
-        }
+        const text = el.querySelector(".text-container") as HTMLElement | null
+        if (!text) return
+
+        const sectionTop     = idx * vh
+        const sectionCenter  = sectionTop + vh / 2
+        const d              = Math.abs(y + vh / 2 - sectionCenter)
+        const prog           = Math.max(0, 1 - d / (vh / 2))
+
+        const scale      = 0.7 + prog * 0.5
+        const opacity    = 0.55 + prog * 0.45
+
+        text.style.transform = `scale(${scale})`
+        text.style.opacity   = `${opacity}`
       })
     }
 
     const io = new IntersectionObserver(
       entries => {
         entries.forEach(entry => {
-          const idxAttr = entry.target.getAttribute("data-index")
-          if (!idxAttr) return
-          const idx = Number(idxAttr)
-
-          const v = videoRefs.current[idx]
-          if (v) {
+          const idx = Number(entry.target.getAttribute("data-index"))
+          const vid = videoRefs.current[idx]
+          if (vid) {
             if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
-              v.classList.remove("video-fade-out")
-              v.classList.add("video-fade-in")
-              v.play().catch(() => {})
+              vid.classList.replace("video-fade-out", "video-fade-in")
+              vid.play().catch(() => {})
             } else {
-              v.classList.remove("video-fade-in")
-              v.classList.add("video-fade-out")
-              setTimeout(() => v.pause(), 500)
+              vid.classList.replace("video-fade-in", "video-fade-out")
+              setTimeout(() => vid.pause(), 500)
             }
           }
-
           if (entry.isIntersecting && entry.intersectionRatio > 0.9) setActive(idx)
         })
       },
-      { root: rootEl, threshold: [0.2, 0.5, 0.8, 0.9, 1.0] }
+      { root: rootEl, threshold: [0.2, 0.5, 0.8, 0.9, 1] }
     )
 
     rootEl.addEventListener("scroll", handleScroll)
     sectionRefs.current.forEach(el => el && io.observe(el))
     handleScroll()
-    
+
     return () => {
       rootEl.removeEventListener("scroll", handleScroll)
       io.disconnect()
@@ -148,80 +121,166 @@ export default function NFTMarketplace() {
     if (active === 2 && !hasSpun) setHasSpun(true)
   }, [active, hasSpun])
 
-  const FloatingOrb = ({ size, color, delay }:{ size:string;color:string;delay:string }) => (
+  /* ------------------------------------------------------------------ */
+  /* Helpers                                                            */
+  /* ------------------------------------------------------------------ */
+  const FloatingOrb = ({
+    size,
+    color,
+    delay,
+  }: {
+    size: string
+    color: string
+    delay: string
+  }) => (
     <div
       className={`pointer-events-none absolute ${size} ${color} rounded-full blur-xl opacity-20`}
       style={{
-        transition: "transform 200ms linear",
         transform: `translate(${mouse.x * 0.02}px, ${mouse.y * 0.02}px)`,
+        transition: "transform 200ms linear",
         animation: `pulse 3s ease-in-out infinite`,
         animationDelay: delay,
       }}
     />
   )
 
+  /* ------------------------------------------------------------------ */
+  /* Render                                                             */
+  /* ------------------------------------------------------------------ */
   return (
-    <div className="bg-black text-white overflow-hidden overflow-x-hidden min-h-screen relative w-full max-w-full">
+    <div className="relative w-full max-w-full min-h-screen overflow-x-hidden bg-black text-white">
+      {/* ---------- global tweaks ---------- */}
       <style jsx global>{`
-        html, body {
+        html,
+        body {
+          width: 100%;
+          max-width: 100vw;
           height: auto;
           overflow-x: hidden;
           overscroll-behavior: none;
           -webkit-overflow-scrolling: touch !important;
-          width: 100%;
-          max-width: 100vw;
         }
-        * { box-sizing: border-box; }
-        
-        @keyframes spinOnce { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .spin-once { animation: spinOnce 0.9s ease-in-out 1 both; }
+        * {
+          box-sizing: border-box;
+        }
 
+        /* video fade helper */
+        .video-fade-in {
+          opacity: 0.95 !important;
+          transition: opacity 0.5s ease;
+        }
+        .video-fade-out {
+          opacity: 0.25 !important;
+          transition: opacity 0.5s ease;
+        }
+        .video-base {
+          opacity: 0.95;
+        }
+
+        /* one-shot spin on the last title */
+        @keyframes spinOnce {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
+          }
+        }
+        .spin-once {
+          animation: spinOnce 0.9s ease-in-out 1 both;
+        }
+
+        /* sheen highlight for middle title */
         @keyframes sheen {
-          0% { transform: translateX(-150%) skewX(-20deg); opacity: 0; }
-          50% { opacity: .25; }
-          100% { transform: translateX(150%) skewX(-20deg); opacity: 0; }
+          0% {
+            transform: translateX(-150%) skewX(-20deg);
+            opacity: 0;
+          }
+          50% {
+            opacity: 0.25;
+          }
+          100% {
+            transform: translateX(150%) skewX(-20deg);
+            opacity: 0;
+          }
         }
         .sheen:after {
-          content:""; position:absolute; top:0; left:-25%; height:100%; width:25%;
-          background: linear-gradient(90deg, transparent, rgba(255,255,255,.25), transparent);
-          animation: sheen 1.4s ease-in-out infinite; pointer-events:none;
+          content: "";
+          position: absolute;
+          top: 0;
+          left: -25%;
+          width: 25%;
+          height: 100%;
+          background: linear-gradient(
+            90deg,
+            transparent,
+            rgba(255, 255, 255, 0.25),
+            transparent
+          );
+          animation: sheen 1.4s ease-in-out infinite;
+          pointer-events: none;
         }
-        @keyframes pulse { 0%,100%{opacity:.2;} 50%{opacity:.35;} }
 
-        /* Video visibility defaults */
-        .video-fade-in  { opacity: 0.95 !important; transition: opacity .5s ease; }
-        .video-fade-out { opacity: 0.25 !important; transition: opacity .5s ease; }
-        .video-base     { opacity: 0.95; }
+        /* floating orb pulse */
+        @keyframes pulse {
+          0%,
+          100% {
+            opacity: 0.2;
+          }
+          50% {
+            opacity: 0.35;
+          }
+        }
 
-        .snap-y {
-          overscroll-behavior-y: contain !important;
-          scroll-snap-type: y mandatory;
-          touch-action: pan-y;
-          min-height: 100vh;
-          -webkit-overflow-scrolling: touch;
-        }
-        
-        .snap-start {
-          scroll-snap-align: start;
-          scroll-snap-stop: always;
-          height: 100vh;
-          min-height: 100vh;
-        }
-        
-        .video-section { position: relative; overflow: hidden; z-index: 1; scroll-snap-align: start; scroll-snap-stop: always; }
-        .content-section { position: relative; z-index: 10; background: rgba(0,0,0,.8); }
+        /* ---------- mobile-only tweaks ---------- */
+        @media (max-width: 768px) {
+          /* center the headline block */
+          .text-container {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+            padding: 0 1rem;
+          }
 
-        /* Legibility upgrades */
-        .text-container h1 span {
-          text-shadow: 0 2px 12px rgba(0,0,0,.75);
-          -webkit-text-stroke: .5px rgba(0,0,0,.55);
-        }
-        .text-container p {
-          text-shadow: 0 2px 10px rgba(0,0,0,.65);
+          /* fluid headline and body sizes with clamp() */
+          .text-container h1 {
+            font-size: clamp(2.25rem, 8vw, 3rem);
+            line-height: 1.15;
+          }
+          .text-container p {
+            font-size: clamp(1rem, 3.5vw, 1.15rem);
+          }
+
+          /* make video cover the viewport */
+          video {
+            width: 100%;
+            height: 100%;
+            min-width: 100vw;
+            min-height: 100vh;
+            object-fit: cover;
+            transform: scale(1.1);
+          }
+
+          .video-section {
+            position: relative;
+            height: 100vh;
+            min-height: 100vh;
+            width: 100%;
+            overflow: hidden;
+            scroll-snap-align: start;
+            scroll-snap-stop: always;
+          }
+
+          .video-section > div {
+            position: absolute;
+            inset: 0;
+          }
         }
       `}</style>
 
-      {/* fixed flourish layer */}
+      {/* ---------- background orbs ---------- */}
       <div className="fixed inset-0 z-0 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-black to-pink-900/20" />
         <FloatingOrb size="w-96 h-96" color="bg-purple-500" delay="0s" />
@@ -229,53 +288,53 @@ export default function NFTMarketplace() {
         <FloatingOrb size="w-80 h-80" color="bg-blue-500" delay="1.6s" />
       </div>
 
-      {/* the only scroller */}
+      {/* ---------- main scroll container ---------- */}
       <main
         ref={scrollRef}
-        className="relative z-10 snap-y snap-mandatory min-h-screen overflow-y-auto overflow-x-hidden touch-pan-y scroll-smooth w-full"
-        style={{ overscrollBehaviorY: "contain", overscrollBehaviorX: "none", WebkitOverflowScrolling: "touch" }}
+        className="relative z-10 snap-y snap-mandatory min-h-screen touch-pan-y scroll-smooth overflow-y-auto overflow-x-hidden w-full"
+        style={{
+          overscrollBehaviorY: "contain",
+          overscrollBehaviorX: "none",
+          WebkitOverflowScrolling: "touch",
+        }}
       >
+        {/* -------- hero scenes -------- */}
         {scenes.map((sc, i) => (
           <section
             key={i}
             data-index={i}
-            ref={el => { sectionRefs.current[i] = el }}
-            className="relative snap-start h-dvh w-full max-w-full flex items-center justify-center overflow-x-hidden video-section"
+            ref={el => { if (el) sectionRefs.current[i] = el }}
+            className="video-section flex items-center justify-center snap-start h-dvh w-full max-w-full"
           >
-            {/* Background Video */}
+            {/* background video */}
             <div className="absolute inset-0 -z-10 overflow-hidden">
               <video
-                ref={el => { videoRefs.current[i] = el }}
-                className="h-full w-full object-cover video-base"
+                ref={el => { if (el) videoRefs.current[i] = el }}
+                className="video-base h-full w-full object-cover object-center"
                 src={sc.src}
                 muted
                 playsInline
                 loop
                 preload="metadata"
               />
-              {/* Stronger overlay for NFT(1) and Exchange(2) */}
-              <div className={`absolute inset-0 ${i === 1 || i === 2 ? "bg-black/45" : "bg-black/12"}`} />
+              <div
+                className={`absolute inset-0 ${
+                  i === 1 || i === 2 ? "bg-black/45" : "bg-black/12"
+                }`}
+              />
             </div>
 
-            {/* Text */}
+            {/* headline block */}
             <div
-              className="container mx-auto px-6 text-center select-none text-container"
+              className="text-container container mx-auto px-6 text-center select-none flex flex-col items-center justify-center min-h-screen"
               style={{ transition: "transform .4s ease, opacity .4s ease" }}
             >
               <h1
                 className={[
-                  "relative text-6xl md:text-8xl font-serif font-black leading-tight mx-auto max-w-5xl",
+                  "relative text-4xl sm:text-6xl md:text-8xl font-serif font-black leading-tight mx-auto max-w-5xl",
                   i === 1 ? "sheen" : "",
                   i === 2 && active === 2 && !hasSpun ? "spin-once" : "",
                 ].join(" ")}
-                style={{
-                  transform:
-                    i === 0
-                      ? "perspective(1200px) translateZ(0) scale(1.02)"
-                      : i === 1
-                      ? "perspective(1200px) translateZ(0) rotateX(2deg) rotateY(3deg)"
-                      : "perspective(1200px) translateZ(0)",
-                }}
               >
                 <span
                   className={`bg-gradient-to-r ${
@@ -288,10 +347,22 @@ export default function NFTMarketplace() {
                 </span>
               </h1>
 
-              <p className="text-xl md:text-2xl text-white/95 mt-8 max-w-3xl mx-auto">
-                {i === 0 && <>Dive into a marketplace where <span className="text-transparent bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text font-semibold">design meets rarity</span> and every card is a collectible masterpiece.</>}
-                {i === 1 && <>Generate stylistically consistent, AI-crafted characters and turn them into limited-run collectibles.</>}
-                {i === 2 && <>Claim drops, print premium cards, and build your collection for the Cardify Club.</>}
+              <p className="mt-8 text-base sm:text-xl md:text-2xl text-white/95 max-w-3xl mx-auto">
+                {i === 0 && (
+                  <>
+                    Dive into a marketplace where{" "}
+                    <span className="bg-gradient-to-r from-purple-300 to-pink-300 bg-clip-text text-transparent font-semibold">
+                      design meets rarity
+                    </span>{" "}
+                    and every card is a collectible masterpiece.
+                  </>
+                )}
+                {i === 1 && (
+                  <>Generate stylistically consistent, AI-crafted characters and turn them into limited-run collectibles.</>
+                )}
+                {i === 2 && (
+                  <>Claim drops, print premium cards, and build your collection for the Cardify Club.</>
+                )}
               </p>
 
               <div className="mt-12 flex flex-col sm:flex-row gap-6 justify-center items-center">
@@ -316,29 +387,37 @@ export default function NFTMarketplace() {
           </section>
         ))}
 
-        <section className="relative w-full max-w-full h-screen flex items-center justify-center overflow-x-hidden overflow-y-hidden content-section snap-start">
+        {/* -------- landing CTA -------- */}
+        <section className="content-section relative w-full max-w-full h-screen flex items-center justify-center snap-start overflow-x-hidden overflow-y-hidden">
           <div className="container mx-auto px-6">
             <div className="relative overflow-hidden bg-gradient-to-r from-purple-600/30 via-pink-600/30 to-blue-600/30 backdrop-blur-2xl border border-white/30 rounded-3xl p-6 md:p-8 text-center">
               <div className="absolute inset-0 bg-gradient-to-r from-purple-500/15 to-pink-500/15 animate-pulse" />
               <div className="relative z-10">
                 <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-yellow-500/30 to-orange-500/30 backdrop-blur-xl border border-yellow-500/40 rounded-full px-6 py-2 mb-4">
                   <Sparkles className="w-4 h-4 text-yellow-200 animate-spin" />
-                  <span className="text-sm font-medium text-yellow-100">Limited Drop Access</span>
+                  <span className="text-sm font-medium text-yellow-100">
+                    Limited Drop Access
+                  </span>
                 </div>
 
                 <h2 className="text-3xl md:text-5xl font-bold mb-4">
-                  <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">Create. Collect. Customize.</span>
+                  <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
+                    Create. Collect. Customize.
+                  </span>
                   <br />
-                  <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">Start Your Cardify Journey</span>
+                  <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
+                    Start Your Cardify Journey
+                  </span>
                 </h2>
 
-                <p className="text-lg md:text-xl text-white/95 mb-6 max-w-2xl mx-auto">
-                  Join a fast-growing community crafting AI-generated trading cards—collect, print, and share your creations.
+                <p className="mb-6 text-lg md:text-xl text-white/95 max-w-2xl mx-auto">
+                  Join a fast-growing community crafting AI-generated trading cards—collect,
+                  print, and share your creations.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
                   <Button
-                    onClick={handleConnectWallet}
+                    onClick={() => setIsWalletConnected(v => !v)}
                     size="lg"
                     className="group relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 hover:scale-105 transition-all duration-300 px-8 md:px-12 py-3 md:py-4 text-base md:text-lg font-bold rounded-full"
                   >
