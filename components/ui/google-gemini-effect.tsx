@@ -47,10 +47,11 @@ export const GoogleGeminiEffect = ({
       </p>
 
       <div className="w-full h-[890px] -top-60 md:-top-40  flex items-center justify-center bg-red-transparent absolute ">
-        <Link href="/collection">
-          <button className="font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 hover:from-purple-700 hover:via-pink-700 hover:to-blue-700 text-white rounded-full md:px-4 md:py-2 px-2 py-1 md:mt-24 mt-8 z-30 md:text-base text-xs w-fit mx-auto transition-all duration-300 hover:scale-105">
-            Explore Collection
-          </button>
+        <Link 
+          href="/collection"
+          className="font-bold bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 hover:from-purple-700 hover:via-pink-700 hover:to-blue-700 text-white rounded-full md:px-4 md:py-2 px-2 py-1 md:mt-24 mt-8 z-30 md:text-base text-xs w-fit mx-auto transition-all duration-300 hover:scale-105 inline-block text-center"
+        >
+          Explore Collection
         </Link>
       </div>
 
