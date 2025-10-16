@@ -10,6 +10,7 @@ export default function NFTMarketplace() {
   /* ------------------------------------------------------------------ */
   /* State & refs                                                        */
   /* ------------------------------------------------------------------ */
+  const [isMobile, setIsMobile] = useState(false)
   const [isWalletConnected, setIsWalletConnected] = useState(false)
   const [active,            setActive]            = useState(0)
   const [hasSpun,           setHasSpun]           = useState(false)
@@ -40,13 +41,27 @@ export default function NFTMarketplace() {
   }, [])
 
   /* ------------------------------------------------------------------ */
+  /* Mobile detection                                                   */
+  /* ------------------------------------------------------------------ */
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth <= 768)
+    }
+    
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
+  /* ------------------------------------------------------------------ */
   /* Demo data                                                          */
   /* ------------------------------------------------------------------ */
   const scenes = useMemo(
     () => [
-      { title: "Marketplace", subtitle: "Trading Cards NFT", src: "/clip2.mp4", poster: "/clip2.mp4", hint: "Scroll for AI-Generated" },
-      { title: "NFT",           src: "/clip3.mp4", poster: "/clip3.mp4", hint: "Scroll for Trading Cards" },
-      { title: "Exchange",      src: "/clip4.mp4", poster: "/clip4.mp4", hint: "Scroll to continue"     },
+      { title: "Marketplace", subtitle: "Trading Cards", src: "/clip2.mp4", mobileSrc: "/clip2mobile.mp4", poster: "/clip2.mp4", hint: "Scroll for AI-Generated" },
+      { title: "NFT",           src: "/clip3.mp4", mobileSrc: "/clip3mobile.mp4", poster: "/clip3.mp4", hint: "Scroll for Trading Cards" },
+      { title: "Exchange",      src: "/clip4.mp4", mobileSrc: "/clip4mobile.mp4", poster: "/clip4.mp4", hint: "Scroll to continue"     },
     ],
     []
   )
@@ -337,7 +352,7 @@ export default function NFTMarketplace() {
                     minWidth: '100%',
                     minHeight: '100%'
                   }}
-                  src={sc.src}
+                  src={i === 0 && sc.mobileSrc && isMobile ? sc.mobileSrc : sc.src}
                   muted
                   playsInline
                   loop
@@ -346,7 +361,7 @@ export default function NFTMarketplace() {
               ) : (
                 <LazyVideo
                   ref={el => { if (el) videoRefs.current[i] = el }}
-                  src={sc.src}
+                  src={i === 0 && sc.mobileSrc && isMobile ? sc.mobileSrc : sc.src}
                   poster={sc.poster}
                   className="video-base h-full w-full object-cover object-center"
                   muted
