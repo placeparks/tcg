@@ -25,7 +25,7 @@ export const GoogleGeminiEffect = ({
   return (
     <div className={cn("sticky top-80", className)}>
       <p
-        className="text-4xl md:text-9xl font-bold pb-4 text-center"
+        className="text-6xl md:text-9xl font-bold pb-4 text-center"
         style={{
           fontFamily: "Playfair Display, serif",
           backgroundImage: "url(/card2.png)",
@@ -40,7 +40,7 @@ export const GoogleGeminiEffect = ({
         {title || `Marketplace`}
       </p>
       <p
-        className="text-lg md:text-3xl font-bold text-center text-neutral-400 mt-4 max-w-lg mx-auto"
+        className="text-2xl md:text-3xl font-bold text-center text-neutral-400 mt-4 max-w-lg mx-auto"
         style={{ fontFamily: "Playfair Display, serif" }}
       >
         {description || `Trading Cards NFTs Exchange`}
