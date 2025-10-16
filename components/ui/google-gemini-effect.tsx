@@ -1,14 +1,14 @@
 "use client";
 import { cn } from "@/lib/utils";
 import { motion } from "motion/react";
-import { MotionValue, Transition, linear } from "motion"; // ⟵ get types + easing here
+import { MotionValue, Transition } from "motion"; // ⟵ get types + easing here
 import React from "react";
 import Link from "next/link";
 import Image from "next/image";
 
 const transition: Transition = {
   duration: 0,
-  ease: linear, // ⟵ not a string
+  ease: "linear", // ⟵ not a string
 };
 
 export const GoogleGeminiEffect = ({
