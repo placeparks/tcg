@@ -149,7 +149,11 @@ function Inner() {
   if (view === "loading") return <FullPageLoader message="Loading collections…" />
   if (view === "error")   return <Empty msg="Error loading factory counters." />
   if (view === "empty")   return <Empty msg="No collections yet." />
-  if (visible.length === 0) return <Empty msg={`No results for “${keyword}”.`} />
+  // show empty state **only** after everything is ready **and** a real keyword exists
+if (view === "ready" && keyword && keyword.trim().length > 0 && visible.length === 0) {
+  return <Empty msg={`No results for “${keyword}”.`} />
+}
+if (!keyword && visible.length === 0) return <FullPageLoader message="Loading collections…" />;
 
   return (
     <div className="min-h-screen bg-black">
