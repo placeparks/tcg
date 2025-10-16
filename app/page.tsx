@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Wallet, Sparkles, ArrowRight, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
+import { LazyVideo } from "@/components/LazyVideo"
 
 export default function NFTMarketplace() {
   /* ------------------------------------------------------------------ */
@@ -43,9 +44,9 @@ export default function NFTMarketplace() {
   /* ------------------------------------------------------------------ */
   const scenes = useMemo(
     () => [
-      { title: "Trading Cards", src: "/clip2.mp4", hint: "Scroll for AI-Generated" },
-      { title: "NFT",           src: "/clip3.mp4", hint: "Scroll for Trading Cards" },
-      { title: "Exchange",      src: "/clip4.mp4", hint: "Scroll to continue"     },
+      { title: "Marketplace Trading Cards", src: "/clip2.mp4", poster: "/clip2.mp4", hint: "Scroll for AI-Generated" },
+      { title: "NFT",           src: "/clip3.mp4", poster: "/clip3.mp4", hint: "Scroll for Trading Cards" },
+      { title: "Exchange",      src: "/clip4.mp4", poster: "/clip4.mp4", hint: "Scroll to continue"     },
     ],
     []
   )
@@ -93,6 +94,7 @@ export default function NFTMarketplace() {
           const idx = Number(entry.target.getAttribute("data-index"))
           const vid = videoRefs.current[idx]
           if (vid) {
+            console.log(`Video ${idx} intersection:`, entry.isIntersecting, entry.intersectionRatio)
             if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
               vid.classList.replace("video-fade-out", "video-fade-in")
               vid.play().catch(() => {})
@@ -100,6 +102,8 @@ export default function NFTMarketplace() {
               vid.classList.replace("video-fade-in", "video-fade-out")
               setTimeout(() => vid.pause(), 500)
             }
+          } else {
+            console.log(`Video ${idx} ref not found`)
           }
           if (entry.isIntersecting && entry.intersectionRatio > 0.9) setActive(idx)
         })
@@ -110,7 +114,7 @@ export default function NFTMarketplace() {
     rootEl.addEventListener("scroll", handleScroll)
     sectionRefs.current.forEach(el => el && io.observe(el))
     handleScroll()
-
+    
     return () => {
       rootEl.removeEventListener("scroll", handleScroll)
       io.disconnect()
@@ -232,6 +236,13 @@ export default function NFTMarketplace() {
           }
         }
 
+        /* ---------- performance optimizations ---------- */
+        video {
+          will-change: transform;
+          backface-visibility: hidden;
+          -webkit-backface-visibility: hidden;
+        }
+
         /* ---------- mobile-only tweaks ---------- */
         @media (max-width: 768px) {
           /* center the headline block */
@@ -255,12 +266,18 @@ export default function NFTMarketplace() {
 
           /* make video cover the viewport */
           video {
-            width: 100%;
-            height: 100%;
-            min-width: 100vw;
-            min-height: 100vh;
-            object-fit: cover;
-            transform: scale(1.1);
+            width: 100% !important;
+            height: 100% !important;
+            min-width: 100vw !important;
+            min-height: 100vh !important;
+            object-fit: cover !important;
+            object-position: center !important;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            transform: scale(1.05);
           }
 
           .video-section {
@@ -269,8 +286,8 @@ export default function NFTMarketplace() {
             min-height: 100vh;
             width: 100%;
             overflow: hidden;
-            scroll-snap-align: start;
-            scroll-snap-stop: always;
+          scroll-snap-align: start;
+          scroll-snap-stop: always;
           }
 
           .video-section > div {
@@ -307,16 +324,37 @@ export default function NFTMarketplace() {
             className="video-section flex items-center justify-center snap-start h-dvh w-full max-w-full"
           >
             {/* background video */}
-            <div className="absolute inset-0 -z-10 overflow-hidden">
-              <video
-                ref={el => { if (el) videoRefs.current[i] = el }}
-                className="video-base h-full w-full object-cover object-center"
-                src={sc.src}
-                muted
-                playsInline
-                loop
-                preload="metadata"
-              />
+            <div className="absolute inset-0 -z-10 overflow-hidden" style={{ width: '100%', height: '100%' }}>
+              {i === 0 ? (
+                <video
+                  ref={el => { if (el) videoRefs.current[i] = el }}
+                  className="video-base h-full w-full object-cover object-center"
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    objectPosition: 'center',
+                    minWidth: '100%',
+                    minHeight: '100%'
+                  }}
+                  src={sc.src}
+                  muted
+                  playsInline
+                  loop
+                  preload="metadata"
+                />
+              ) : (
+                <LazyVideo
+                  ref={el => { if (el) videoRefs.current[i] = el }}
+                  src={sc.src}
+                  poster={sc.poster}
+                  className="video-base h-full w-full object-cover object-center"
+                  muted
+                  playsInline
+                  loop
+                  preload="none"
+                />
+              )}
               <div
                 className={`absolute inset-0 ${
                   i === 1 || i === 2 ? "bg-black/45" : "bg-black/12"
@@ -387,54 +425,7 @@ export default function NFTMarketplace() {
           </section>
         ))}
 
-        {/* -------- landing CTA -------- */}
-        <section className="content-section relative w-full max-w-full h-screen flex items-center justify-center snap-start overflow-x-hidden overflow-y-hidden">
-          <div className="container mx-auto px-6">
-            <div className="relative overflow-hidden bg-gradient-to-r from-purple-600/30 via-pink-600/30 to-blue-600/30 backdrop-blur-2xl border border-white/30 rounded-3xl p-6 md:p-8 text-center">
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-500/15 to-pink-500/15 animate-pulse" />
-              <div className="relative z-10">
-                <div className="inline-flex items-center space-x-2 bg-gradient-to-r from-yellow-500/30 to-orange-500/30 backdrop-blur-xl border border-yellow-500/40 rounded-full px-6 py-2 mb-4">
-                  <Sparkles className="w-4 h-4 text-yellow-200 animate-spin" />
-                  <span className="text-sm font-medium text-yellow-100">
-                    Limited Drop Access
-                  </span>
-                </div>
-
-                <h2 className="text-3xl md:text-5xl font-bold mb-4">
-                  <span className="bg-gradient-to-r from-white via-purple-200 to-white bg-clip-text text-transparent">
-                    Create. Collect. Customize.
-                  </span>
-                  <br />
-                  <span className="bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
-                    Start Your Cardify Journey
-                  </span>
-                </h2>
-
-                <p className="mb-6 text-lg md:text-xl text-white/95 max-w-2xl mx-auto">
-                  Join a fast-growing community crafting AI-generated trading cards—collect,
-                  print, and share your creations.
-                </p>
-
-                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                  <Button
-                    onClick={() => setIsWalletConnected(v => !v)}
-                    size="lg"
-                    className="group relative overflow-hidden bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 hover:scale-105 transition-all duration-300 px-8 md:px-12 py-3 md:py-4 text-base md:text-lg font-bold rounded-full"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                    <Wallet className="w-5 h-5 mr-2" />
-                    {isWalletConnected ? "Wallet Connected" : "Connect Wallet"}
-                    <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                  </Button>
-
-                  <div className="text-sm text-white/90">
-                    🎴 <span className="font-semibold">New cards dropping daily</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
+    
       </main>
     </div>
   )
