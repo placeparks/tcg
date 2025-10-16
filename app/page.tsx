@@ -65,6 +65,7 @@ export default function NFTMarketplace() {
 
     const handleTouchMove = (e: TouchEvent) => {
       const el = e.currentTarget as HTMLElement
+      // Only prevent default at the very edges to allow normal scrolling
       if (
         (el.scrollTop <= 0 && e.touches[0].clientY > 0) ||
         (el.scrollTop + el.clientHeight >= el.scrollHeight && e.touches[0].clientY < 0)
@@ -73,8 +74,8 @@ export default function NFTMarketplace() {
       }
     }
 
-    // Add non-passive event listener
-    scrollElement.addEventListener('touchmove', handleTouchMove, { passive: false })
+    // Add passive event listener for better mobile performance
+    scrollElement.addEventListener('touchmove', handleTouchMove, { passive: true })
     
     return () => {
       scrollElement.removeEventListener('touchmove', handleTouchMove)
@@ -184,7 +185,7 @@ export default function NFTMarketplace() {
           height: auto;
           overflow-x: hidden;
           overscroll-behavior: none;
-          -webkit-overflow-scrolling: auto !important;
+          -webkit-overflow-scrolling: touch !important;
           width: 100%;
           max-width: 100vw;
         }
@@ -241,7 +242,7 @@ export default function NFTMarketplace() {
         style={{
           overscrollBehaviorY: "contain",
           overscrollBehaviorX: "none",
-          WebkitOverflowScrolling: "auto",
+          WebkitOverflowScrolling: "touch",
         }}
       >
         {scenes.map((sc, i) => (
