@@ -99,7 +99,7 @@ export default function Footer() {
         {/* Bottom Bar */}
         <div className="border-t border-white/10 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
           <p className="text-gray-400 mb-4 md:mb-0">
-            &copy; 2025 TCG Meta. All rights reserved. Made with ❤️ for the NFT community.
+            &copy; 2025 TCG Meta. All rights reserved.
           </p>
                </div>
       </div>
