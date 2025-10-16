@@ -151,6 +151,13 @@ function Inner() {
 
   /* flags */
   const loading = !ready || erc1155Loading || singleNftLoading || isLoadingMetadata;
+  
+  // Add minimum loading time to prevent flash of "No Collections Yet"
+  const [minLoadingComplete, setMinLoadingComplete] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setMinLoadingComplete(true), 1000);
+    return () => clearTimeout(timer);
+  }, []);
 
   /* process collections data */
   const processedCollections = useMemo(() => {
@@ -284,12 +291,13 @@ function Inner() {
   }, [keyword, processedPhysicalNft]);
 
   /* early returns */
-  if (loading)          return <FullPageLoader message="Loading collections…" />;
+  if (loading || !minLoadingComplete) return <FullPageLoader message="Loading collections…" />;
   if (!CONTRACTS.factoryERC1155 && !CONTRACTS.singleFactory) 
     return <Empty>Contract addresses not configured. Please set factory environment variables.</Empty>;
   if (erc1155Error || singleNftError) 
     return <Empty>Error loading collections: {erc1155Error?.message || singleNftError?.message}</Empty>;
-  if (!erc1155Loading && !singleNftLoading && processedPhysicalNft.length === 0)
+  // Only show "No Collections Yet" if we're sure loading is complete and no collections exist
+  if (!erc1155Loading && !singleNftLoading && !isLoadingMetadata && processedPhysicalNft.length === 0)
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
