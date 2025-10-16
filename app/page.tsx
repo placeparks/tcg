@@ -53,24 +53,30 @@ export default function NFTMarketplace() {
     }
   }, [])
 
-  // Touch handling (fixes "Unable to preventDefault inside passive" by using passive:false)
+  // Touch handling - minimal to allow normal scrolling
   useEffect(() => {
     const scrollElement = scrollRef.current
     if (!scrollElement) return
 
+    // Only prevent bounce at the very edges
     const handleTouchMove = (e: TouchEvent) => {
       const el = e.currentTarget as HTMLElement
-      // Only prevent at edges to allow normal scrolling
-      if (
-        (el.scrollTop <= 0 && e.touches[0].clientY > 0) ||
-        (el.scrollTop + el.clientHeight >= el.scrollHeight && e.touches[0].clientY < 0)
-      ) {
+      const isAtTop = el.scrollTop <= 0
+      const isAtBottom = el.scrollTop + el.clientHeight >= el.scrollHeight
+      const isScrollingUp = e.touches[0].clientY > 0
+      const isScrollingDown = e.touches[0].clientY < 0
+      
+      // Only prevent default if trying to scroll beyond boundaries
+      if ((isAtTop && isScrollingUp) || (isAtBottom && isScrollingDown)) {
         e.preventDefault()
       }
     }
 
     scrollElement.addEventListener("touchmove", handleTouchMove, { passive: false })
-    return () => scrollElement.removeEventListener("touchmove", handleTouchMove)
+    
+    return () => {
+      scrollElement.removeEventListener("touchmove", handleTouchMove)
+    }
   }, [])
 
   // Scroll + intersection logic
@@ -192,6 +198,7 @@ export default function NFTMarketplace() {
           scroll-snap-type: y mandatory;
           touch-action: pan-y;
           min-height: 100vh;
+          -webkit-overflow-scrolling: touch;
         }
         
         .snap-start {
