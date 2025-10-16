@@ -180,11 +180,14 @@ export default function NFTMarketplace() {
 
         .snap-y {
           overscroll-behavior-y: contain !important;
+          scroll-snap-type: y proximity;
           touch-action: pan-y;
           min-height: 100vh;
         }
         
         .snap-start {
+          scroll-snap-align: start;
+          scroll-snap-stop: always;
           height: 100vh;
           min-height: 100vh;
         }
@@ -201,7 +204,7 @@ export default function NFTMarketplace() {
       {/* the only scroller */}
       <main
         ref={scrollRef}
-        className="relative z-10 min-h-screen overflow-y-auto overflow-x-hidden overscroll-none touch-pan-y scroll-smooth w-full"
+        className="relative z-10 snap-y snap-proximity min-h-screen overflow-y-auto overflow-x-hidden overscroll-none touch-pan-y scroll-smooth w-full"
         style={{
           overscrollBehaviorY: "contain",
           overscrollBehaviorX: "none",
