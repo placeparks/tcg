@@ -85,6 +85,39 @@ export default function NFTMarketplace() {
     const rootEl = scrollRef.current
     if (!rootEl) return
 
+    // Handle scroll-based text zoom
+    const handleScroll = () => {
+      const scrollTop = rootEl.scrollTop
+      const viewportHeight = window.innerHeight
+      
+      // Apply zoom effect based on scroll position
+      sectionRefs.current.forEach((el, idx) => {
+        if (!el) return
+        
+        const textContainer = el.querySelector(".text-container") as HTMLElement | null
+        if (textContainer) {
+          // Calculate how much of this section is visible
+          const sectionTop = idx * viewportHeight
+          const sectionBottom = (idx + 1) * viewportHeight
+          const sectionCenter = sectionTop + (viewportHeight / 2)
+          
+          // Calculate progress based on how close scroll is to section center
+          const distanceFromCenter = Math.abs(scrollTop + (viewportHeight / 2) - sectionCenter)
+          const maxDistance = viewportHeight / 2
+          const sectionProgress = Math.max(0, 1 - (distanceFromCenter / maxDistance))
+          
+          // Apply smooth zoom effect
+          const scale = 0.7 + (sectionProgress * 0.5) // Scale from 0.7 to 1.2
+          const opacity = 0.5 + (sectionProgress * 0.5) // Opacity from 0.5 to 1.0
+          const translateY = (1 - sectionProgress) * 100
+          
+          textContainer.style.transform = `scale(${scale}) translateY(${translateY}px)`
+          textContainer.style.opacity = `${opacity}`
+        }
+      })
+    }
+
+    // Handle video visibility with intersection observer
     const io = new IntersectionObserver(
       entries => {
         entries.forEach(entry => {
@@ -106,15 +139,6 @@ export default function NFTMarketplace() {
           }
 
           if (entry.isIntersecting && entry.intersectionRatio > 0.9) setActive(idx)
-
-          const textContainer = (entry.target as HTMLElement).querySelector(".text-container") as HTMLElement | null
-          if (textContainer) {
-            const scale = Math.min(0.9 + entry.intersectionRatio * 0.3, 1.15)
-            const opacity = Math.min(entry.intersectionRatio * 1.1, 1)
-            const translateY = (1 - entry.intersectionRatio) * 30
-            textContainer.style.transform = `scale(${scale}) translateY(${translateY}px)`
-            textContainer.style.opacity = `${opacity}`
-          }
         })
       },
       {
@@ -124,8 +148,17 @@ export default function NFTMarketplace() {
       }
     )
 
+    // Add scroll listener
+    rootEl.addEventListener('scroll', handleScroll)
     sectionRefs.current.forEach(el => el && io.observe(el))
-    return () => io.disconnect()
+    
+    // Set initial state
+    handleScroll()
+    
+    return () => {
+      rootEl.removeEventListener('scroll', handleScroll)
+      io.disconnect()
+    }
   }, [])
 
   useEffect(() => {
