@@ -45,7 +45,9 @@ export default function NFTMarketplace() {
   /* ------------------------------------------------------------------ */
   useEffect(() => {
     const checkMobile = () => {
-      setIsMobile(window.innerWidth <= 768)
+      const mobile = window.innerWidth <= 768
+      setIsMobile(mobile)
+      console.log('Device type:', mobile ? 'Mobile' : 'Desktop')
     }
     
     checkMobile()
@@ -60,8 +62,8 @@ export default function NFTMarketplace() {
   const scenes = useMemo(
     () => [
       { title: "Marketplace", subtitle: "Trading Cards", src: "/clip2.mp4", mobileSrc: "/clip2mobile.mp4", poster: "/clip2.mp4", hint: "Scroll for AI-Generated" },
-      { title: "NFT",           src: "/clip3.mp4", mobileSrc: "/clip3mobile.mp4", poster: "/clip3.mp4", hint: "Scroll for Trading Cards" },
-      { title: "Exchange",      src: "/clip4.mp4", mobileSrc: "/clip4mobile.mp4", poster: "/clip4.mp4", hint: "Scroll to continue"     },
+      { title: "NFT",           src: "/clip3.mp4", mobileSrc: "/clip3_mobile.mp4", poster: "/clip3.mp4", hint: "Scroll for Trading Cards" },
+      { title: "Exchange",      src: "/clip4.mp4", mobileSrc: "/clip4_mobile.mp4", poster: "/clip4.mp4", hint: "Scroll to continue"     },
     ],
     []
   )
@@ -352,7 +354,11 @@ export default function NFTMarketplace() {
                     minWidth: '100%',
                     minHeight: '100%'
                   }}
-                  src={i === 0 && sc.mobileSrc && isMobile ? sc.mobileSrc : sc.src}
+                  src={(() => {
+                    const videoSrc = sc.mobileSrc && isMobile ? sc.mobileSrc : sc.src
+                    console.log(`Video ${i} source:`, videoSrc, 'Mobile:', isMobile)
+                    return videoSrc
+                  })()}
                   muted
                   playsInline
                   loop
@@ -361,7 +367,11 @@ export default function NFTMarketplace() {
               ) : (
                 <LazyVideo
                   ref={el => { if (el) videoRefs.current[i] = el }}
-                  src={i === 0 && sc.mobileSrc && isMobile ? sc.mobileSrc : sc.src}
+                  src={(() => {
+                    const videoSrc = sc.mobileSrc && isMobile ? sc.mobileSrc : sc.src
+                    console.log(`LazyVideo ${i} source:`, videoSrc, 'Mobile:', isMobile)
+                    return videoSrc
+                  })()}
                   poster={sc.poster}
                   className="video-base h-full w-full object-cover object-center"
                   muted
