@@ -106,8 +106,8 @@ function Inner() {
             type === "erc1155" ? CONTRACTS.nft1155Abi : CONTRACTS.singleCollectionAbi
           try {
             const [name, symbol] = await Promise.all([
-              publicClient.readContract({ address, abi, functionName: "name" }),
-              publicClient.readContract({ address, abi, functionName: "symbol" }),
+              publicClient.readContract({ address: address as `0x${string}`, abi, functionName: "name" }),
+              publicClient.readContract({ address: address as `0x${string}`, abi, functionName: "symbol" }),
             ])
             m[address] = { name, symbol, type }
           } catch {
@@ -160,7 +160,7 @@ function Inner() {
             <CollectionCard
               key={address}
               address={address}
-              preview={CONTRACTS.collectionPreview(address)}
+              preview={CONTRACTS.collectionPreview(address as `0x${string}`)}
               type={type}
             />
           ))}
