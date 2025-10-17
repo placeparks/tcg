@@ -17,9 +17,9 @@ export default function Page() {
   const pathLengthFifth = useTransform(scrollYProgress, [0, 0.8], [0, 1.2]);
 
   return (
-    <div
-      className="h-[400vh] bg-gradient-to-br from-blue-600 via-purple-600 via-pink-500 to-red-500 w-full dark:border dark:border-white/[0.1] rounded-md relative pt-40 overflow-clip"
-      ref={ref}
+     <div
+ className="h-[400vh] bg-gradient-to-br from-purple-900 via-black to-pink-900 w-full dark:border dark:border-white/[0.1] rounded-md relative pt-40 overflow-clip"
+       ref={ref}
     >
       <GoogleGeminiEffect
         pathLengths={[
