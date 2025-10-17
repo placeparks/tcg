@@ -128,7 +128,8 @@ const { switchChainAsync } = useSwitchChain();
 
   /* listings state */
   const [listedNFTs, setListedNFTs] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(true)      // spinner flag
+  const [listingsLoaded, setListingsLoaded] = useState(false) // NEW
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const inFlight = useRef(false)
   const lastFetchedCollections = useRef<string>('')
@@ -139,11 +140,11 @@ const { switchChainAsync } = useSwitchChain();
 
   // Add delay to prevent flash of "No NFTs Listed" message
   useEffect(() => {
-    if (!loading) {
+    if (!loading && listingsLoaded) {
       const timer = setTimeout(() => setShowContent(true), 300);
       return () => clearTimeout(timer);
     }
-  }, [loading]);
+  }, [loading, listingsLoaded]);        // wait until listingsLoaded === true
 
 /* ─────────── fast, dependency-free fetcher ─────────── */
 const fetchListings = useCallback(async () => {
@@ -159,6 +160,7 @@ const fetchListings = useCallback(async () => {
   inFlight.current = true;
   try {
     setLoading(true);
+    setListingsLoaded(false);          // mark start
 
     // 1) supplies
     const supplies: bigint[] = [];
@@ -277,6 +279,7 @@ const fetchListings = useCallback(async () => {
     } finally {
       inFlight.current = false;
       setLoading(false);
+      setListingsLoaded(true);           // mark done
     }
   }, 500); // 500ms debounce
 }, [publicClient, collections]);
@@ -766,7 +769,7 @@ if (loading || !showContent) return <FullPageLoader message="Loading…" />
       <div className="relative z-10 container mx-auto px-6 py-20">
            {/* NFTs Grid */}
         
-        {listedNFTs.length === 0 ? (
+        {listedNFTs.length === 0 && listingsLoaded ? (  /* guard with flag */
           <div className="text-center max-w-2xl mx-auto">
             <div className="relative mb-8">
               <div className="w-32 h-32 bg-gradient-to-r from-purple-500/20 to-pink-500/20 backdrop-blur-xl border border-white/20 rounded-3xl flex items-center justify-center mx-auto">
