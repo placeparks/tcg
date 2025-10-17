@@ -131,6 +131,17 @@ const { switchChainAsync } = useSwitchChain();
   const inFlight = useRef(false)
   const lastFetchedCollections = useRef<string>('')
   const fetchTimeout = useRef<NodeJS.Timeout | null>(null)
+  
+  // Add a small delay to prevent flash of "No NFTs Listed" message
+  const [showContent, setShowContent] = useState(false)
+
+  // Add delay to prevent flash of "No NFTs Listed" message
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => setShowContent(true), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
 
 /* ─────────── fast, dependency-free fetcher ─────────── */
 const fetchListings = useCallback(async () => {
@@ -724,7 +735,7 @@ const waitForChain = (target: number) =>
     }
   }
 
-if (loading) return <FullPageLoader message="Loading…" />
+if (loading || !showContent) return <FullPageLoader message="Loading…" />
 
   /* ─── UI ─── */
   return (
