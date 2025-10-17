@@ -17,7 +17,6 @@ import { getNFTsForOwner, AlchemyNFT } from "@/lib/alchemy";
 /* ------------------------------------------------------------------ */
 /* constants + helpers                                                */
 const CHAIN_ID = 84532;                          // Base-Sepolia
-type FlatNFT = { contractAddress: string; tokenId: string };
 
 /* ------------------------------------------------------------------ */
 export default function Dashboard() {
@@ -27,15 +26,14 @@ export default function Dashboard() {
   const publicClient  = usePublicClient({ chainId: CHAIN_ID });
 
   /* ui state -------------------------------------------------------------- */
-  const [busy,  setBusy ] = useState(false);     // fetch in progress
-  const [show,  setShow ] = useState(false);     // gate to avoid flicker
+  const [busy,  setBusy ] = useState(false);
+  const [show,  setShow ] = useState(false);
 
-  /* data state ------------------------------------------------------------ */
+  /* data ------------------------------------------------------------------ */
   const [allCollections, setAllCollections] = useState<string[]>([]);
   const [alchemyNfts,    setAlchemyNfts   ] = useState<AlchemyNFT[]>([]);
 
-  /* ------------------------------------------------------------------ */
-  /* read total collections counts (2 factories)                        */
+  /* totals from factories ------------------------------------------------- */
   const {
     data: singleTotal,
     isPending: singleLoading,
@@ -59,36 +57,34 @@ export default function Dashboard() {
   });
 
   /* ------------------------------------------------------------------ */
-  /* 1/3  – pull every collection address once we know the totals       */
+  /* 1/3 – load every collection address once totals are known          */
   useEffect(() => {
     if (!publicClient || (!singleTotal && !erc1155Total)) return;
 
     (async () => {
       const list: string[] = [];
 
-      /* single-mint collections */
       if (singleTotal) {
         const n = Number(singleTotal as bigint);
         for (let i = 0; i < n; i++) {
           const addr = await publicClient.readContract({
-            address: CONTRACTS.singleFactory,
-            abi:     CONTRACTS.singleFactoryAbi,
+            address:      CONTRACTS.singleFactory,
+            abi:          CONTRACTS.singleFactoryAbi,
             functionName: "allCollections",
-            args:   [BigInt(i)],
+            args:         [BigInt(i)],
           });
           list.push(addr as string);
         }
       }
 
-      /* ERC-1155 collections */
       if (erc1155Total) {
         const n = Number(erc1155Total as bigint);
         for (let i = 0; i < n; i++) {
           const addr = await publicClient.readContract({
-            address: CONTRACTS.factoryERC1155,
-            abi:     CONTRACTS.factoryERC1155Abi,
+            address:      CONTRACTS.factoryERC1155,
+            abi:          CONTRACTS.factoryERC1155Abi,
             functionName: "allCollections",
-            args:   [BigInt(i)],
+            args:         [BigInt(i)],
           });
           list.push(addr as string);
         }
@@ -99,33 +95,28 @@ export default function Dashboard() {
   }, [singleTotal, erc1155Total, publicClient]);
 
   /* ------------------------------------------------------------------ */
-  /* 2/3  – core loader (Alchemy -> on-chain)                            */
+  /* 2/3 – core loader                                                  */
   const loadNfts = useCallback(async () => {
     if (!ready || !address || !allCollections.length) return;
 
-    setBusy(true);          // spinning loader
-    setShow(false);         // hide UI until we’re done
+    setBusy(true);
+    setShow(false);
 
     try {
-      const alch = await getNFTsForOwner(address, allCollections);
+      const raw = await getNFTsForOwner(address, allCollections);
 
-      /* keep only tokens from our factories just in case               */
       const factories = new Set(allCollections.map(c => c.toLowerCase()));
-      const filtered  = alch.filter(nft =>
+      const kept      = raw.filter(nft =>
         factories.has(nft.contract.address.toLowerCase()),
       );
 
-      /* duplicate entries for ERC-1155 balances                        */
       const expanded: AlchemyNFT[] = [];
-      filtered.forEach(nft => {
-        const bal = nft.tokenType === "ERC1155"
+      kept.forEach(nft => {
+        const count = nft.tokenType === "ERC1155"
           ? Number((nft as any).balance ?? 1)
           : 1;
-        for (let i = 0; i < bal; i++) {
-          expanded.push({
-            ...nft,
-            uniqueId: `${nft.contract.address}-${nft.tokenId}-${i}`,
-          });
+        for (let i = 0; i < count; i++) {
+          expanded.push({ ...nft, uniqueId: `${nft.contract.address}-${nft.tokenId}-${i}` });
         }
       });
 
@@ -135,47 +126,43 @@ export default function Dashboard() {
       setAlchemyNfts([]);
     } finally {
       setBusy(false);
-      /* give React 1-2 frames before showing to avoid flicker          */
-      setTimeout(() => setShow(true), 200);
+      setTimeout(() => setShow(true), 200);   // anti-flicker
     }
   }, [ready, address, allCollections]);
 
-  /* loader runs at start + whenever its deps change ------------------ */
   useEffect(() => { loadNfts(); }, [loadNfts]);
 
   /* ------------------------------------------------------------------ */
-  /* 3/3  – live refresh when something sells or is cancelled           */
+  /* 3/3 – refresh on Sold / Cancelled events                           */
   useWatchContractEvent({
     address: CONTRACTS.marketplace,
     abi:     CONTRACTS.marketplaceAbi,
     eventName: "Sold1155",
-    listener() { loadNfts(); },
+    onLogs() { loadNfts(); },
   });
   useWatchContractEvent({
     address: CONTRACTS.marketplace,
     abi:     CONTRACTS.marketplaceAbi,
     eventName: "Cancelled1155",
-    listener() { loadNfts(); },
+    onLogs() { loadNfts(); },
   });
 
   /* ------------------------------------------------------------------ */
   /* RENDER                                                             */
-  const initialLoad =
+  const loading =
     !ready ||
     singleLoading || erc1155Loading ||
-    busy        ||
-    !show;
+    busy || !show;
 
-  if (initialLoad)           return <FullPageLoader message="Loading NFTs…" />;
-  if (!address)              return <p className="text-center mt-12 text-zinc-400">🔗 Connect your wallet to view NFTs.</p>;
-  if (!allCollections.length)return <EmptyState label="No Collections Found" />;
-  if (!alchemyNfts.length)   return <EmptyState label="😢 No Cardify NFTs owned yet." />;
+  if (loading)                 return <FullPageLoader message="Loading NFTs…"/>;
+  if (!address)                return <Empty label="🔗 Connect your wallet to view NFTs." />;
+  if (!allCollections.length)  return <Empty label="No Collections Found" />;
+  if (!alchemyNfts.length)     return <Empty label="😢 No Cardify NFTs owned yet." />;
 
   return (
     <div className="min-h-screen bg-black">
       <div className="container mx-auto px-6 py-20">
         <h1 className="text-3xl font-bold text-white mb-8">Your NFTs</h1>
-
         <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {alchemyNfts.map(nft => (
             <AlchemyNFTCard key={nft.uniqueId} nft={nft}/>
@@ -187,7 +174,7 @@ export default function Dashboard() {
 }
 
 /* ------------------------------------------------------------------ */
-function EmptyState({ label }: { label: string }) {
+function Empty({ label }: { label: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-2xl text-zinc-400">{label}</p>
