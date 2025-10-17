@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { useRouter } from "next/navigation"
 import {
   useAccount,
   usePublicClient,
@@ -42,6 +43,7 @@ type Listing1155Tuple = readonly [`0x${string}`, bigint] // [seller, unitPrice]
 
 export default function BuyPage() {
   useEnsureBaseSepolia(); 
+  const router = useRouter()
   const { address } = useAccount()
   const publicClient = usePublicClient({ chainId: CHAIN_ID })!
   const { writeContractAsync } = useWriteContract()
@@ -682,6 +684,7 @@ const waitForChain = (target: number) =>
     await fetchListings();                   // re-sync
     toast.dismiss();
     toast.success('NFT purchased!');
+    router.refresh();                        // refresh dashboard data
   } catch (err: any) {
     console.error('❌ Buy transaction failed:', err);
     toast.dismiss();
@@ -729,6 +732,7 @@ const waitForChain = (target: number) =>
       setListedNFTs((prev) => prev.filter((itm) => itm.collection !== collection || itm.id !== id))
       toast.dismiss()
       toast.success("Listing cancelled")
+      router.refresh();                        // refresh dashboard data
     } catch (err: any) {
       toast.dismiss()
       toast.error(err?.shortMessage || "Cancel failed")
