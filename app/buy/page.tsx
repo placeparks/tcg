@@ -127,6 +127,7 @@ const { switchChainAsync } = useSwitchChain();
   /* listings state */
   const [listedNFTs, setListedNFTs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [firstFetchDone, setFirstFetchDone] = useState(false) // prevent empty-state flash
   const [hoveredCard, setHoveredCard] = useState<string | null>(null)
   const inFlight = useRef(false)
   const lastFetchedCollections = useRef<string>('')
@@ -279,6 +280,7 @@ const fetchListings = useCallback(async () => {
 
     console.log(`🎉 Fetch completed! Found ${items.length} listed NFTs:`, items);
   setListedNFTs(items);
+  setFirstFetchDone(true);        // ✅ mark the initial fetch complete
     } finally {
       inFlight.current = false;
       setLoading(false);
@@ -742,7 +744,7 @@ const waitForChain = (target: number) =>
     }
   }
 
-if (loading) return <FullPageLoader message="Loading…" />
+if (!firstFetchDone || loading) return <FullPageLoader message="Loading…" />
 
   /* ─── UI ─── */
   return (
