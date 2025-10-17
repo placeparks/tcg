@@ -18,7 +18,7 @@ export default function Page() {
 
   return (
     <div
-      className="h-[400vh] bg-gradient-to-br from-purple-900 via-black to-pink-900 w-full dark:border dark:border-white/[0.1] rounded-md relative pt-40 overflow-clip"
+      className="h-[400vh] bg-gradient-to-br from-indigo-900 via-purple-800 via-pink-800 to-orange-900 w-full dark:border dark:border-white/[0.1] rounded-md relative pt-40 overflow-clip"
       ref={ref}
     >
       <GoogleGeminiEffect
