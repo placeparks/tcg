@@ -108,6 +108,27 @@ export async function resolveDisplayImageUrl(rawUri: string, tokenId: bigint | n
         }
       }
     } catch (_) { /* fallthrough */ }
+
+    // If folder and we didn't find metadata, try common image filenames
+    if (looksFolder) {
+      const base = httpUrl.endsWith("/") ? httpUrl : httpUrl + "/";
+      const hexId = to1155HexId(tokenId);
+      const decId = typeof tokenId === "bigint" ? Number(tokenId) : Number(tokenId);
+      const candidates = [
+        `${hexId}.png`, `${hexId}.jpg`, `${hexId}.jpeg`, `${hexId}.webp`,
+        `${decId}.png`, `${decId}.jpg`, `${decId}.jpeg`, `${decId}.webp`,
+        `0.png`, `0.jpg`, `0.jpeg`, `0.webp`,
+        `cover.png`, `cover.jpg`, `cover.webp`,
+        `preview.png`, `preview.jpg`, `preview.webp`,
+        `image.png`, `image.jpg`, `image.webp`,
+        `logo.png`, `logo.jpg`, `logo.webp`,
+        `banner.png`, `banner.jpg`, `banner.webp`,
+      ];
+      for (const file of candidates) {
+        const url = base + file;
+        if (await probeUrl(url)) return url;
+      }
+    }
   }
 
   // 4) Otherwise, it might already be the image (either ipfs path or http url).
