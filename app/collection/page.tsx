@@ -1,184 +1,391 @@
 /* --------------------------------------------------------------------
- *  app/collection/page.tsx – unified, flicker‑free version
+ *  app/collection/page.tsx
  * ------------------------------------------------------------------ */
-"use client"
+"use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react"
-import { useSearchParams } from "next/navigation"
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams }          from "next/navigation";
 import {
   useReadContract,
   usePublicClient,
-} from "wagmi"
-import { usePrivy } from "@privy-io/react-auth"
+  useReadContracts,
+}                                   from "wagmi";
+import { usePrivy }                 from "@privy-io/react-auth";
+import { Sparkles }                  from "lucide-react";
 
-import FullPageLoader from "@/components/FullPageLoader"
-import useEnsureBase from "@/hooks/useEnsureNetwork"
-import CollectionCard from "@/components/CollectionCard"
-import { CONTRACTS } from "@/lib/contract"
+import FullPageLoader               from "@/components/FullPageLoader";
+import useEnsureBaseSepolia         from "@/hooks/useEnsureNetwork";
+import CollectionCard               from "@/components/CollectionCard";
+import { Badge }                    from "@/components/ui/badge";
+import { CONTRACTS }                from "@/lib/contract";
 
 /* ------------------------------------------------------------------ */
-const Empty = ({ msg }: { msg: string }) => (
-  <div className="min-h-screen flex items-center justify-center text-gray-400 text-center px-4">
-    {msg}
+
+export const dynamic = "force-dynamic";      // ⬅ disable SSG / SSG export
+
+/* Very tiny ERC-721 ABI just for name() */
+const nameAbi = [
+  {
+    constant: true,
+    inputs: [],
+    name: "name",
+    outputs: [{ type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
+
+/* -------------------- Stateless fall-back UI bits ----------------- */
+const Empty = ({ children }: { children: React.ReactNode }) => (
+  <div className="min-h-screen flex items-center justify-center text-white">
+    <div className="text-center">
+      {children}
+    </div>
   </div>
-)
+);
 
-type View = "loading" | "ready" | "empty" | "error"
-
+/* ------------------------------------------------------------------ */
+/*              <Inner /> does all the data fetching                   */
+/*   …and it now lives inside a <Suspense> boundary.                   */
 /* ------------------------------------------------------------------ */
 function Inner() {
-  /* enforce Base‑Sepolia */
-  useEnsureBase()
+  /* make sure we’re on Base-Sepolia everywhere in the app */
+  useEnsureBaseSepolia();
 
-  /* external hooks */
-  const { ready } = usePrivy()
-  const searchParams = useSearchParams()
-  const keyword = (searchParams.get("search") || "").toLowerCase()
-  const publicClient = usePublicClient({ chainId: 84532 })
+  /* ----- hooks ----- */
+  const { ready } = usePrivy();
+  const searchParams       = useSearchParams();              // ⬅ OK inside Suspense
+  const keyword            = (searchParams.get("search") || "").toLowerCase();
 
-  /* ───── factory counters (two independent hooks) ───── */
+  // Fetch total collections count from both factories
   const {
-    data: erc1155Total = 0n,
-    isPending: erc1155Pending,
+    data: erc1155Total,
+    isLoading: erc1155Loading,
     error: erc1155Error,
   } = useReadContract({
-    address: CONTRACTS.factoryERC1155,
-    abi: CONTRACTS.factoryERC1155Abi,
+    address:      CONTRACTS.factoryERC1155 as `0x${string}`,
+    abi:          CONTRACTS.factoryERC1155Abi,
     functionName: "totalCollections",
-    query: { enabled: !!CONTRACTS.factoryERC1155 },
-  })
+    query: {
+      enabled: !!CONTRACTS.factoryERC1155,
+    }
+  });
 
   const {
-    data: singleTotal = 0n,
-    isPending: singlePending,
-    error: singleError,
+    data: singleNftTotal,
+    isLoading: singleNftLoading,
+    error: singleNftError,
   } = useReadContract({
-    address: CONTRACTS.singleFactory,
-    abi: CONTRACTS.singleFactoryAbi,
+    address:      CONTRACTS.singleFactory as `0x${string}`,
+    abi:          CONTRACTS.singleFactoryAbi,
     functionName: "totalCollections",
-    query: { enabled: !!CONTRACTS.singleFactory },
-  })
+    query: {
+      enabled: !!CONTRACTS.singleFactory,
+    }
+  });
 
-  /* ───── state ───── */
-  const [collections, setCollections] = useState<
-    { address: string; type: "erc1155" | "single" }[]
-  >([])
-  const [meta, setMeta] = useState<Record<string, any>>({})
 
-  /* ───── fetch collection addresses ───── */
+  const publicClient = usePublicClient({ chainId: 84532 })!;
+
+  // State for collections and metadata
+  const [allCollections, setAllCollections] = useState<{address: string, type: 'erc1155' | 'single'}[][]>([]);
+  const [physicalNftMetadata, setPhysicalNftMetadata] = useState<Record<string, any>>({});
+  const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
+  const [metadataFetchStarted, setMetadataFetchStarted] = useState(false);
+
+  // Fetch all collections from both factories
   useEffect(() => {
-    if (!publicClient || !ready) return
-    ;(async () => {
-      const list: { address: string; type: "erc1155" | "single" }[] = []
-
-      for (let i = 0; i < Number(erc1155Total); i++) {
-        const addr = await publicClient.readContract({
-          address: CONTRACTS.factoryERC1155,
-          abi: CONTRACTS.factoryERC1155Abi,
-          functionName: "allCollections",
-          args: [BigInt(i)],
-        })
-        list.push({ address: addr as string, type: "erc1155" })
-      }
-
-      for (let i = 0; i < Number(singleTotal); i++) {
-        const addr = await publicClient.readContract({
-          address: CONTRACTS.singleFactory,
-          abi: CONTRACTS.singleFactoryAbi,
-          functionName: "allCollections",
-          args: [BigInt(i)],
-        })
-        list.push({ address: addr as string, type: "single" })
-      }
-
-      setCollections(list)
-    })()
-  }, [erc1155Total, singleTotal, publicClient, ready])
-
-  /* ───── fetch metadata for each collection ───── */
-  useEffect(() => {
-    if (!publicClient || collections.length === 0) return
-    ;(async () => {
-      const m: Record<string, any> = {}
-      await Promise.all(
-        collections.map(async ({ address, type }) => {
-          const abi =
-            type === "erc1155" ? CONTRACTS.nft1155Abi : CONTRACTS.singleCollectionAbi
+    if (!publicClient) return;
+    
+    const fetchAllCollections = async () => {
+      const allCollectionsData: {address: string, type: 'erc1155' | 'single'}[] = [];
+      
+      // Fetch ERC1155 collections
+      if (erc1155Total && CONTRACTS.factoryERC1155) {
+        const count = Number(erc1155Total);
+        console.log(`🟣 Fetching ${count} ERC1155 collections...`);
+        
+        for (let i = 0; i < count; i++) {
           try {
-            const [name, symbol] = await Promise.all([
-              publicClient.readContract({ address: address as `0x${string}`, abi, functionName: "name" }),
-              publicClient.readContract({ address: address as `0x${string}`, abi, functionName: "symbol" }),
-            ])
-            m[address] = { name, symbol, type }
-          } catch {
-            m[address] = { name: address.slice(0, 6), symbol: "??", type }
+            const address = await publicClient.readContract({
+              address: CONTRACTS.factoryERC1155 as `0x${string}`,
+              abi: CONTRACTS.factoryERC1155Abi,
+              functionName: "allCollections",
+              args: [BigInt(i)],
+            });
+            allCollectionsData.push({address: address as string, type: 'erc1155'});
+          } catch (error) {
+            console.error(`Error fetching ERC1155 collection at index ${i}:`, error);
           }
-        })
-      )
-      setMeta(m)
-    })()
-  }, [collections, publicClient])
+        }
+      }
+      
+      // Fetch Single NFT collections
+      if (singleNftTotal && CONTRACTS.singleFactory) {
+        const count = Number(singleNftTotal);
+        console.log(`🟣 Fetching ${count} Single NFT collections...`);
+        
+        for (let i = 0; i < count; i++) {
+          try {
+            const address = await publicClient.readContract({
+              address: CONTRACTS.singleFactory as `0x${string}`,
+              abi: CONTRACTS.singleFactoryAbi,
+              functionName: "allCollections",
+              args: [BigInt(i)],
+            });
+            allCollectionsData.push({address: address as string, type: 'single'});
+          } catch (error) {
+            console.error(`Error fetching Single NFT collection at index ${i}:`, error);
+          }
+        }
+      }
+      
+      console.log('🟣 All Collections:', allCollectionsData);
+      console.log('🟣 ERC1155 Collections:', allCollectionsData.filter(c => c.type === 'erc1155'));
+      console.log('🟣 Single NFT Collections:', allCollectionsData.filter(c => c.type === 'single'));
+      setAllCollections([allCollectionsData]);
+    };
+    
+    fetchAllCollections();
+  }, [erc1155Total, singleNftTotal, publicClient]);
 
-  /* ───── view state derivation ───── */
-  const view: View = useMemo(() => {
-    if (!ready || erc1155Pending || singlePending) return "loading"
-    if (erc1155Error || singleError) return "error"
-    if (erc1155Total === 0n && singleTotal === 0n) return "empty"
-    if (Object.keys(meta).length < collections.length) return "loading"
-    return "ready"
-  }, [
-    ready,
-    erc1155Pending,
-    singlePending,
-    erc1155Error,
-    singleError,
-    erc1155Total,
-    singleTotal,
-    meta,
-    collections.length,
-  ])
+  /* flags */
+  const loading = !ready || erc1155Loading || singleNftLoading || isLoadingMetadata;
+  
+  // Add a small delay to prevent flash of "No Collections Yet"
+  const [showContent, setShowContent] = useState(false);
+  useEffect(() => {
+    if (!loading) {
+      const timer = setTimeout(() => setShowContent(true), 300);
+      return () => clearTimeout(timer);
+    }
+  }, [loading]);
+  
 
-  /* ───── keyword filter ───── */
-  const visible = useMemo(() => {
-    const base = collections.map(c => ({ ...c, ...meta[c.address] }))
-    if (!keyword) return base
-    return base.filter(col => col.name?.toLowerCase().includes(keyword))
-  }, [collections, meta, keyword])
+  /* process collections data */
+  const processedCollections = useMemo(() => {
+    if (!allCollections || allCollections.length === 0) return [];
+    const flatCollections = allCollections.flat();
+    console.log('🟣 Processed Collections:', flatCollections);
+    return flatCollections;
+  }, [allCollections]);
 
-  /* ───── renders ───── */
-  if (view === "loading") return <FullPageLoader message="Loading collections…" />
-  if (view === "error")   return <Empty msg="Error loading factory counters." />
-  if (view === "empty")   return <Empty msg="No collections yet." />
-  // show empty state **only** after everything is ready **and** a real keyword exists
-if (view === "ready" && keyword && keyword.trim().length > 0 && visible.length === 0) {
-  return <Empty msg={`No results for “${keyword}”.`} />
-}
-if (!keyword && visible.length === 0) return <FullPageLoader message="Loading collections…" />;
+  useEffect(() => {
+    if (!allCollections || !publicClient) return;
+    
+    const fetchMetadata = async () => {
+      setMetadataFetchStarted(true);
+      setIsLoadingMetadata(true);
+      const metadata: Record<string, any> = {};
+      
+      // Set a timeout to prevent hanging
+      const timeoutId = setTimeout(() => {
+        console.warn('Metadata fetching timeout - using fallback data');
+        setIsLoadingMetadata(false);
+      }, 10000); // 10 second timeout
+      
+      const flatCollections = allCollections.flat();
+      
+      for (const collection of flatCollections) {
+        const { address, type } = collection;
+        try {
+          // Fetch collection details from the individual collection contract
+          let name: unknown;
+          let symbol: unknown;
+          let baseURI: string = "";
+          let maxSupply: unknown;
+          let mintPrice: unknown;
 
+          if (type === 'erc1155') {
+            // ERC1155 exposes baseUri() directly
+            const [nm, sym, base, max, price] = await Promise.all([
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.nft1155Abi,
+                functionName: "name",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.nft1155Abi,
+                functionName: "symbol",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.nft1155Abi,
+                functionName: "baseUri",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.nft1155Abi,
+                functionName: "maxSupply",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.nft1155Abi,
+                functionName: "mintPrice",
+              }),
+            ]);
+            name = nm; symbol = sym; baseURI = base as string; maxSupply = max; mintPrice = price;
+          } else {
+            // Single collections: derive base from uri(0)
+            const [nm, sym, uri0, max, price] = await Promise.all([
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: "name",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: "symbol",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: "uri",
+                args: [0n],
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: "maxSupply",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.singleCollectionAbi,
+                functionName: "mintPrice",
+              }),
+            ]);
+            name = nm; symbol = sym; maxSupply = max; mintPrice = price;
+            const raw = String(uri0 || "");
+            // Remove ERC1155 template tokens and json filename to get a directory-like base
+            let base = raw
+              .replace(/\{id\}(\.json)?/gi, "")
+              .replace(/\/[^\/]*\.json$/i, "/");
+            if (base && !base.endsWith("/")) base += "/";
+            baseURI = base;
+          }
+
+          metadata[address] = {
+            name: name as string,
+            symbol: symbol as string,
+            baseURI,
+            maxSupply: maxSupply as bigint,
+            mintPrice: mintPrice as bigint,
+            owner: '', // ERC1155 contracts don't have owner function
+            type: type,
+          };
+        } catch (error) {
+          console.error(`Error fetching metadata for ${address}:`, error);
+          metadata[address] = {
+            name: `Collection ${address.slice(0, 6)}...`,
+            symbol: type === 'erc1155' ? 'HYBRID' : 'SINGLE',
+            baseURI: '',
+            maxSupply: 0n,
+            mintPrice: 0n,
+            owner: '',
+            type: type,
+            error: true,
+          };
+        }
+      }
+      
+      setPhysicalNftMetadata(metadata);
+      setIsLoadingMetadata(false);
+      clearTimeout(timeoutId);
+      console.log('🟣 Physical+NFT Metadata:', metadata);
+      console.log('🟣 Metadata count:', Object.keys(metadata).length);
+    };
+    
+    fetchMetadata();
+  }, [allCollections, publicClient]);
+
+  const processedPhysicalNft = useMemo(() => {
+    if (!allCollections) return [];
+    const flatCollections = allCollections.flat();
+    const processed = flatCollections.map((collection) => {
+      const { address, type } = collection;
+      const metadata = physicalNftMetadata[address];
+      return {
+        address: address,
+        name: metadata?.name || `Collection ${address.slice(0, 6)}...`,
+        symbol: metadata?.symbol || (type === 'erc1155' ? 'HYBRID' : 'SINGLE'),
+        baseURI: metadata?.baseURI || '',
+        maxSupply: metadata?.maxSupply || 0n,
+        mintPrice: metadata?.mintPrice || 0n,
+        owner: metadata?.owner || '',
+        type: type
+      };
+    });
+    console.log('🟣 Processed Physical+NFT Collections:', processed);
+    console.log('🟣 Metadata available for:', Object.keys(physicalNftMetadata).length, 'collections');
+    return processed;
+  }, [allCollections, physicalNftMetadata]);
+
+  /* filter by keyword (memoised) */
+  const filteredCollections = useMemo(() => {
+    if (!keyword) return processedPhysicalNft;
+    return processedPhysicalNft.filter((col) =>
+      col.name?.toLowerCase().includes(keyword)
+    );
+  }, [keyword, processedPhysicalNft]);
+
+  const filteredPhysicalNft = useMemo(() => {
+    if (!keyword) return processedPhysicalNft;
+    return processedPhysicalNft.filter((col) =>
+      col.name?.toLowerCase().includes(keyword)
+    );
+  }, [keyword, processedPhysicalNft]);
+
+  /* early returns */
+  if (loading || !showContent) return <FullPageLoader message="Loading collections…" />;
+  if (!CONTRACTS.factoryERC1155 && !CONTRACTS.singleFactory) 
+    return <Empty>Contract addresses not configured. Please set factory environment variables.</Empty>;
+  if (erc1155Error || singleNftError) 
+    return <Empty>Error loading collections: {erc1155Error?.message || singleNftError?.message}</Empty>;
+  if (processedPhysicalNft.length === 0)
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-3xl font-bold text-white mb-4">No Collections Yet</h1>
+          <p className="text-gray-400">No collections are available from the factory contracts.</p>
+        </div>
+      </div>
+    );
+  if (keyword && filteredCollections.length === 0)
+    return <Empty>No collections found for "{keyword}".</Empty>;
+
+  /* ---------------- main render ---------------- */
   return (
     <div className="min-h-screen bg-black">
       <div className="container mx-auto px-6 py-20">
         <h1 className="text-3xl font-bold text-white mb-8">Collections</h1>
-        <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {visible.map(({ address, type }) => (
-            <CollectionCard
-              key={address}
-              address={address}
-              preview={CONTRACTS.collectionPreview(address as `0x${string}`)}
-              type={type}
-            />
-          ))}
-        </div>
+        
+        {filteredCollections.length > 0 && (
+          <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {filteredCollections.map((col, i) => (
+              <div key={col.address}>
+                <CollectionCard
+                  address={col.address}
+                  preview={CONTRACTS.collectionPreview(col.address)}
+                  type={col.type}
+                />
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }
 
+/* ------------------------------------------------------------------ */
+/*  Wrapper – satisfies “wrap useSearchParams in a Suspense boundary”  */
 /* ------------------------------------------------------------------ */
 export default function CollectionPage() {
   return (
     <Suspense fallback={<FullPageLoader message="Loading collections…" />}>
       <Inner />
     </Suspense>
-  )
+  );
 }
