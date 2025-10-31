@@ -14,7 +14,7 @@ interface Props {
 }
 
 export default function CollectionCard({ address, preview, tokenId = 0n, type = 'single' }: Props) {
-  const { name, symbol, imageUri, isLoading, isError } = useCollectionMeta(address as `0x${string}`)
+  const { name, symbol, imageUri, isLoading, isError } = useCollectionMeta(address as `0x${string}`, type)
   const [isHovered, setIsHovered] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
@@ -32,8 +32,18 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
 
   const proxySrc = useMemo(() => {
     if (!resolvedSrc) return fallback;
-    const ipfsish = resolvedSrc.replace(/^https?:\/\/[^/]+\/ipfs\//, "ipfs://");
-    return `/api/ipfs-image?src=${encodeURIComponent(ipfsish)}`;
+    // If it's a non-IPFS HTTP URL (e.g., Arweave), use it directly
+    const isHttp = /^https?:\/\//i.test(resolvedSrc);
+    const isHttpIpfsGateway = /^https?:\/\/[^/]+\/ipfs\//i.test(resolvedSrc);
+    if (isHttp && !isHttpIpfsGateway) return resolvedSrc;
+    // Normalize any HTTP IPFS gateway back to ipfs:// for the proxy
+    const ipfsish = isHttpIpfsGateway
+      ? resolvedSrc.replace(/^https?:\/\/[^/]+\/ipfs\//i, "ipfs://")
+      : resolvedSrc;
+    if (/^ipfs:\/\//i.test(ipfsish)) {
+      return `/api/ipfs-image?src=${encodeURIComponent(ipfsish)}`;
+    }
+    return fallback;
   }, [resolvedSrc, fallback]);
 
   return (
