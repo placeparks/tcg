@@ -22,6 +22,7 @@ import {
 import { CONTRACTS } from "@/lib/contract";
 import { Badge }     from "@/components/ui/badge";
 import { AlchemyNFT, getBestImageUrl, preferGateway } from "@/lib/alchemy";
+import { usePublicClient } from "wagmi";
 
 interface Props {
   nft: AlchemyNFT;
@@ -32,6 +33,7 @@ export default function AlchemyNFTCard({ nft }: Props) {
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const chainId = useChainId();
+  const publicClient = usePublicClient({ chainId: 84532 });
   
   // Force Base Sepolia chain for marketplace reads
   const EXPECTED_CHAIN_ID = 84532; // Base Sepolia
@@ -41,23 +43,170 @@ export default function AlchemyNFTCard({ nft }: Props) {
   const [load, setLoad] = useState(true);
   const [imgError, setImgError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
 
   /* get image from Alchemy data */
   const rawUrl = getBestImageUrl(nft);
-  // Temporarily bypass preferGateway to test if it's causing issues
-  const imageUrl = rawUrl; // rawUrl ? preferGateway(rawUrl) : null;
   
-  // Debug: log if no image URL is found
-  if (!imageUrl) {
-    console.warn('⚠️ No image URL found for NFT:', {
-      tokenId: nft.tokenId,
-      contract: nft.contract.address,
-      name: nft.name,
-      hasImage: !!nft.image,
-      hasRawMetadata: !!nft.raw?.metadata,
-      metadataImage: nft.raw?.metadata?.image
-    });
-  }
+  // Check if rawUrl is a JSON metadata file (needs to be fetched and parsed)
+  const isJsonUrl = rawUrl?.endsWith('.json') || 
+    (rawUrl && !rawUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|jfif)$/i) && 
+     (rawUrl.includes('metadata') || rawUrl.includes('/json')));
+  
+  // If we have a URL that might be JSON or no URL at all, try to fetch metadata
+  useEffect(() => {
+    const fetchImageFromMetadata = async () => {
+      // If we already have a valid image URL (not JSON), use it
+      if (rawUrl && !rawUrl.endsWith('.json') && !isJsonUrl) {
+        const optimizedUrl = preferGateway(rawUrl);
+        const finalUrl = optimizedUrl && (optimizedUrl.includes('/ipfs/') || optimizedUrl.startsWith('ipfs://'))
+          ? `/api/ipfs-image?src=${encodeURIComponent(optimizedUrl)}`
+          : optimizedUrl;
+        setResolvedImageUrl(finalUrl);
+        return;
+      }
+
+      // Try to get tokenUri and fetch metadata
+      let tokenUri: string | null = null;
+      if (nft.raw?.tokenUri) {
+        tokenUri = typeof nft.raw.tokenUri === 'string' 
+          ? nft.raw.tokenUri 
+          : (nft.raw.tokenUri as any)?.raw || (nft.raw.tokenUri as any)?.gateway || null;
+      } else if (nft.tokenUri) {
+        tokenUri = typeof nft.tokenUri === 'string'
+          ? nft.tokenUri
+          : (nft.tokenUri as any)?.raw || (nft.tokenUri as any)?.gateway || null;
+      }
+
+      if (!tokenUri) {
+        // Fallback: if rawUrl is JSON, try fetching it
+        if (rawUrl && isJsonUrl) {
+          tokenUri = rawUrl;
+        } else if (publicClient && nft.contract.address && nft.tokenId) {
+          // Last resort: fetch tokenUri directly from contract (for ERC1155)
+          try {
+            console.log('🔍 Fetching tokenUri directly from contract:', {
+              contract: nft.contract.address,
+              tokenId: nft.tokenId,
+            });
+            // First try uri(tokenId)
+            let contractUri = await publicClient.readContract({
+              address: nft.contract.address as `0x${string}`,
+              abi: CONTRACTS.nft1155Abi,
+              functionName: 'uri',
+              args: [BigInt(nft.tokenId)],
+            }) as string;
+            
+            // If uri returns empty, try reading baseUri directly
+            if (!contractUri || contractUri.trim() === '') {
+              console.log('⚠️ uri(tokenId) returned empty, trying baseUri...');
+              contractUri = await publicClient.readContract({
+                address: nft.contract.address as `0x${string}`,
+                abi: CONTRACTS.nft1155Abi,
+                functionName: 'baseUri',
+                args: [],
+              }) as string;
+              console.log('✅ Fetched baseUri from contract:', contractUri);
+            }
+            
+            if (contractUri && typeof contractUri === 'string' && contractUri.trim() !== '') {
+              tokenUri = contractUri;
+              console.log('✅ Using tokenUri from contract:', tokenUri);
+            }
+          } catch (error) {
+            console.error('❌ Failed to fetch tokenUri from contract:', error);
+          }
+        }
+        
+        if (!tokenUri) {
+          console.warn('⚠️ No tokenUri found for NFT:', {
+            tokenId: nft.tokenId,
+            contract: nft.contract.address,
+            name: nft.name,
+            hasRawTokenUri: !!nft.raw?.tokenUri,
+            hasTokenUri: !!nft.tokenUri,
+            rawUrl,
+          });
+          setResolvedImageUrl(null);
+          return;
+        }
+      }
+
+      // Fetch metadata and extract image via server-side API
+      try {
+        // Use server-side API route to avoid CORS issues
+        const apiUrl = `/api/ipfs-metadata?src=${encodeURIComponent(tokenUri)}&tokenId=${nft.tokenId}`;
+        console.log('🔍 Fetching metadata from API:', apiUrl);
+        
+        const response = await fetch(apiUrl);
+        console.log('🔍 Metadata API response:', {
+          ok: response.ok,
+          status: response.status,
+          statusText: response.statusText
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log('🔍 Metadata API data:', data);
+          const imageUrl = data.imageUrl;
+          
+          if (imageUrl) {
+            // Route through proxy for caching
+            const finalUrl = imageUrl.includes('/ipfs/') || imageUrl.startsWith('ipfs://')
+              ? `/api/ipfs-image?src=${encodeURIComponent(imageUrl)}`
+              : imageUrl;
+            setResolvedImageUrl(finalUrl);
+            console.log('✅ Resolved image from metadata:', finalUrl);
+          } else {
+            console.warn('⚠️ No image found in metadata response:', { tokenUri, data });
+            setResolvedImageUrl(null);
+          }
+        } else {
+          const errorText = await response.text();
+          console.error('❌ Failed to fetch metadata:', {
+            status: response.status,
+            statusText: response.statusText,
+            error: errorText
+          });
+          setResolvedImageUrl(null);
+        }
+      } catch (error) {
+        console.error('❌ Failed to resolve image from metadata:', error);
+        setResolvedImageUrl(null);
+      }
+    };
+
+    fetchImageFromMetadata();
+  }, [nft, rawUrl, isJsonUrl]);
+
+  // Use resolved image URL, or fallback to direct URL if available
+  const imageUrl = resolvedImageUrl ?? (rawUrl && !isJsonUrl 
+    ? (() => {
+        const optimizedUrl = preferGateway(rawUrl);
+        return optimizedUrl && (optimizedUrl.includes('/ipfs/') || optimizedUrl.startsWith('ipfs://'))
+          ? `/api/ipfs-image?src=${encodeURIComponent(optimizedUrl)}`
+          : optimizedUrl;
+      })()
+    : null);
+  
+  // Debug: log if no image URL is found (only after async resolution has completed)
+  useEffect(() => {
+    if (!imageUrl && resolvedImageUrl === null && rawUrl === null) {
+      // Only warn if we've tried to resolve and still don't have an image
+      console.warn('⚠️ No image URL found for NFT after resolution:', {
+        tokenId: nft.tokenId,
+        contract: nft.contract.address,
+        name: nft.name,
+        hasImage: !!nft.image,
+        hasRawMetadata: !!nft.raw?.metadata,
+        metadataImage: nft.raw?.metadata?.image,
+        tokenUri: nft.raw?.tokenUri || nft.tokenUri,
+        rawUrl,
+        resolvedImageUrl,
+        isJsonUrl
+      });
+    }
+  }, [imageUrl, resolvedImageUrl, rawUrl, nft]);
   
   // Debug image URL
   useEffect(() => {
@@ -66,6 +215,8 @@ export default function AlchemyNFTCard({ nft }: Props) {
       nftName: nft.name,
       rawUrl,
       imageUrl,
+      resolvedImageUrl,
+      isJsonUrl,
       alchemyImage: nft.image,
       metadataImage: nft.raw?.metadata?.image,
       tokenUri: nft.raw?.tokenUri,
@@ -76,7 +227,7 @@ export default function AlchemyNFTCard({ nft }: Props) {
     });
     console.log("🖼 resolved imageUrl =", imageUrl);
     console.log("🔍 preferGateway test:", rawUrl ? preferGateway(rawUrl) : 'no rawUrl');
-  }, [nft, imageUrl, rawUrl]);
+  }, [nft, imageUrl, rawUrl, resolvedImageUrl, isJsonUrl]);
 
   /* listing info - determine token type and use correct function */
   // Force ERC1155 for NFTs from our factories since our marketplace only supports ERC1155

@@ -1,9 +1,11 @@
 // lib/ipfs.ts
+// Prioritize faster gateways - Cloudflare is typically fastest
 const PUBLIC_GATEWAYS = [
-  "https://ipfs.io",
   "https://cloudflare-ipfs.com",
-  "https://gateway.pinata.cloud",
+  "https://w3s.link",
   "https://dweb.link",
+  "https://ipfs.io",
+  "https://gateway.pinata.cloud", // Keep as last resort due to rate limits
 ];
 
 export function ipfsToHttp(cidOrPath: string, gateway = PUBLIC_GATEWAYS[0]) {
@@ -36,6 +38,7 @@ async function probeUrl(url: string): Promise<boolean> {
       method: "GET",
       headers: { Range: "bytes=0-1" }, // fetch 1st byte only
       cache: "no-store",
+      signal: AbortSignal.timeout(5000), // 5 second timeout
     });
     if (!res.ok) return false;
     const ct = res.headers.get("content-type") || "";

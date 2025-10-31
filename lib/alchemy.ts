@@ -50,12 +50,14 @@ export interface AlchemyNFT {
   uniqueId?: string;
 }
 
+// Prioritize faster gateways - Cloudflare is typically fastest
 const GATEWAYS = [
   "https://cloudflare-ipfs.com/ipfs/",
   "https://w3s.link/ipfs/",
+  "https://dweb.link/ipfs/",
   "https://ipfs.io/ipfs/",
-  // Avoid pinata by default (429)
-  // "https://gateway.pinata.cloud/ipfs/"
+  // Keep Pinata as last resort due to rate limits
+  "https://gateway.pinata.cloud/ipfs/",
 ];
 
 function isHttp(u?: Maybe<string>) {

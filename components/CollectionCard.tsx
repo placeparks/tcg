@@ -4,7 +4,7 @@ import Link from "next/link"
 import { useCollectionMeta } from "@/hooks/useCollectionMeta"
 import { ArrowRight, Sparkles, Eye, ExternalLink } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { resolveDisplayImageUrl } from "@/lib/ipfs"
+// Removed resolveDisplayImageUrl import - now using server-side API route
 
 interface Props {
   address: string
@@ -22,8 +22,28 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
   useEffect(() => {
     let mounted = true
     ;(async () => {
-      const url = await resolveDisplayImageUrl(imageUri, tokenId)
-      if (mounted) setResolvedSrc(url || null)
+      if (!imageUri) {
+        if (mounted) setResolvedSrc(null)
+        return
+      }
+      
+      try {
+        // Use server-side API route to avoid CORS issues
+        const response = await fetch(
+          `/api/ipfs-metadata?src=${encodeURIComponent(imageUri)}&tokenId=${tokenId.toString()}`
+        )
+        
+        if (response.ok) {
+          const data = await response.json()
+          if (mounted) setResolvedSrc(data.imageUrl || null)
+        } else {
+          console.error('Failed to resolve image URL:', response.statusText)
+          if (mounted) setResolvedSrc(null)
+        }
+      } catch (error) {
+        console.error('Error resolving image URL:', error)
+        if (mounted) setResolvedSrc(null)
+      }
     })()
     return () => { mounted = false }
   }, [imageUri, tokenId])
