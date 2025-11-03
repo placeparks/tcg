@@ -415,7 +415,8 @@ export default function AlchemyNFTCard({ nft }: Props) {
     <div className="group relative bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-white/20 hover:border-white/40 group-hover:scale-[1.02] group-hover:shadow-2xl group-hover:shadow-purple-500/20">
       {/* Image Container */}
       <div className="relative aspect-square overflow-hidden">
-        {load ? (
+        {/* Loading State - show when load is true OR when imageUrl is still being resolved */}
+        {(load || !imageUrl) ? (
           <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
             <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center animate-spin">
               <Sparkles className="w-4 h-4 text-white" />
@@ -432,24 +433,26 @@ export default function AlchemyNFTCard({ nft }: Props) {
           </div>
         ) : null}
         
-        <img
-          src={imageUrl || fallback}
-          alt={nft.name || "NFT"}
-          className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${load ? "opacity-0" : "opacity-100"}`}
-          onLoad={() => {
-            console.log('✅ Image loaded successfully:', imageUrl);
-            setLoad(false);
-            setImgError(false);
-          }}
-          onError={(e) => {
-            console.log('❌ Image failed to load:', imageUrl);
-            console.log('❌ Error event:', e);
-            console.log('🔄 Trying fallback image...');
-            (e.target as HTMLImageElement).src = fallback;
-            setLoad(false);
-            setImgError(true);
-          }}
-        />
+        {imageUrl && (
+          <img
+            src={imageUrl}
+            alt={nft.name || "NFT"}
+            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${load || !imageUrl ? "opacity-0" : "opacity-100"}`}
+            onLoad={() => {
+              console.log('✅ Image loaded successfully:', imageUrl);
+              setLoad(false);
+              setImgError(false);
+            }}
+            onError={(e) => {
+              console.log('❌ Image failed to load:', imageUrl);
+              console.log('❌ Error event:', e);
+              console.log('🔄 Trying fallback image...');
+              (e.target as HTMLImageElement).src = fallback;
+              setLoad(false);
+              setImgError(true);
+            }}
+          />
+        )}
         
         {/* Hover Overlay */}
         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
