@@ -88,17 +88,17 @@ function Inner() {
   const publicClient = usePublicClient({ chainId: 84532 })!;
 
   // State for collections and metadata
-  const [allCollections, setAllCollections] = useState<{address: string, type: 'erc1155' | 'single'}[][]>([]);
+  const [allCollections, setAllCollections] = useState<{address: string, type: 'erc1155' | 'single' | 'pack'}[][]>([]);
   const [physicalNftMetadata, setPhysicalNftMetadata] = useState<Record<string, any>>({});
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [metadataFetchStarted, setMetadataFetchStarted] = useState(false);
 
-  // Fetch all collections from both factories
+  // Fetch all collections from both factories and pack collections from database
   useEffect(() => {
     if (!publicClient) return;
     
     const fetchAllCollections = async () => {
-      const allCollectionsData: {address: string, type: 'erc1155' | 'single'}[] = [];
+      const allCollectionsData: {address: string, type: 'erc1155' | 'single' | 'pack'}[] = [];
       
       // Fetch ERC1155 collections
       if (erc1155Total && CONTRACTS.factoryERC1155) {
@@ -140,9 +140,28 @@ function Inner() {
         }
       }
       
+      // Fetch Pack collections from database
+      try {
+        const response = await fetch('/api/packs/active');
+        if (response.ok) {
+          const dbPacks = await response.json();
+          if (Array.isArray(dbPacks)) {
+            console.log(`📦 Fetching ${dbPacks.length} Pack collections...`);
+            dbPacks.forEach((dbPack: any) => {
+              if (dbPack.collection_address) {
+                allCollectionsData.push({address: dbPack.collection_address, type: 'pack'});
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching pack collections:', error);
+      }
+      
       console.log('🟣 All Collections:', allCollectionsData);
       console.log('🟣 ERC1155 Collections:', allCollectionsData.filter(c => c.type === 'erc1155'));
       console.log('🟣 Single NFT Collections:', allCollectionsData.filter(c => c.type === 'single'));
+      console.log('📦 Pack Collections:', allCollectionsData.filter(c => c.type === 'pack'));
       setAllCollections([allCollectionsData]);
     };
     
@@ -226,6 +245,44 @@ function Inner() {
               }),
             ]);
             name = nm; symbol = sym; baseURI = base as string; maxSupply = max; mintPrice = price;
+          } else if (type === 'pack') {
+            // Pack collections: use packCollectionAbi
+            const [nm, sym, uri5, max, price] = await Promise.all([
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: "name",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: "symbol",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: "uri",
+                args: [5n],
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: "maxPacks",
+              }),
+              publicClient.readContract({
+                address: address as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: "packPrice",
+              }),
+            ]);
+            name = nm; symbol = sym; maxSupply = max; mintPrice = price;
+            const raw = String(uri5 || "");
+            // Remove ERC1155 template tokens and json filename to get a directory-like base
+            let base = raw
+              .replace(/\{id\}(\.json)?/gi, "")
+              .replace(/\/[^\/]*\.json$/i, "/");
+            if (base && !base.endsWith("/")) base += "/";
+            baseURI = base;
           } else {
             // Single collections: derive base from uri(0)
             const [nm, sym, uri0, max, price] = await Promise.all([
@@ -279,7 +336,7 @@ function Inner() {
           console.error(`Error fetching metadata for ${address}:`, error);
           metadata[address] = {
             name: `Collection ${address.slice(0, 6)}...`,
-            symbol: type === 'erc1155' ? 'HYBRID' : 'SINGLE',
+            symbol: type === 'erc1155' ? 'HYBRID' : type === 'pack' ? 'PACK' : 'SINGLE',
             baseURI: '',
             maxSupply: 0n,
             mintPrice: 0n,
@@ -309,7 +366,7 @@ function Inner() {
       return {
         address: address,
         name: metadata?.name || `Collection ${address.slice(0, 6)}...`,
-        symbol: metadata?.symbol || (type === 'erc1155' ? 'HYBRID' : 'SINGLE'),
+        symbol: metadata?.symbol || (type === 'erc1155' ? 'HYBRID' : type === 'pack' ? 'PACK' : 'SINGLE'),
         baseURI: metadata?.baseURI || '',
         maxSupply: metadata?.maxSupply || 0n,
         mintPrice: metadata?.mintPrice || 0n,
