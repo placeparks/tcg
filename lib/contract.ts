@@ -6,6 +6,7 @@ export const CONTRACTS = {
   factoryERC1155: process.env.NEXT_PUBLIC_FACTORY_ADDRESS_ERC1155 as `0x${string}`,
   marketplace:  process.env.NEXT_PUBLIC_MARKEPLACE as `0x${string}`,
   singleFactory: process.env.NEXT_PUBLIC_SINGLE_NFT_FACTORY_ADDRESS as `0x${string}`,
+  packFactory: process.env.NEXT_PUBLIC_PACK_FACTORY_ADDRESS as `0x${string}`,
 
 
   singleFactoryAbi: [
@@ -1595,6 +1596,112 @@ export const CONTRACTS = {
     }
   ] as const satisfies Abi,
 
+
+  packFactoryAbi: [
+    {
+      "type": "function",
+      "name": "createCollection",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        {
+          "name": "p",
+          "type": "tuple",
+          "components": [
+            { "name": "name", "type": "string" },
+            { "name": "symbol", "type": "string" },
+            { "name": "owner", "type": "address" },
+            { "name": "tokenURIs", "type": "string[6]" },
+            { "name": "packPrice", "type": "uint256" },
+            { "name": "maxPacks", "type": "uint256" },
+            { "name": "royaltyBps", "type": "uint96" },
+            { "name": "royaltyReceiver", "type": "address" },
+            { "name": "marketplace", "type": "address" },
+            { "name": "initialMintTo", "type": "address" },
+            { "name": "initialMintAmount", "type": "uint256" }
+          ]
+        }
+      ],
+      "outputs": [{ "name": "col", "type": "address" }]
+    },
+    {
+      "type": "function",
+      "name": "setDefaults",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        { "name": "_feeReceiver", "type": "address" },
+        { "name": "_feeBps", "type": "uint96" },
+        { "name": "_marketplace", "type": "address" }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "event",
+      "name": "CollectionCreated",
+      "inputs": [
+        { "name": "creator", "type": "address", "indexed": true },
+        { "name": "collection", "type": "address", "indexed": true },
+        { "name": "owner", "type": "address", "indexed": true }
+      ],
+      "anonymous": false
+    },
+    {
+      "type": "function",
+      "name": "totalCollections",
+      "stateMutability": "view",
+      "inputs": [],
+      "outputs": [{ "type": "uint256" }]
+    },
+    {
+      "type": "function",
+      "name": "allCollections",
+      "stateMutability": "view",
+      "inputs": [{ "name": "index", "type": "uint256" }],
+      "outputs": [{ "type": "address" }]
+    },
+    {
+      "type": "function",
+      "name": "isCardifyCollection",
+      "stateMutability": "view",
+      "inputs": [{ "name": "collection", "type": "address" }],
+      "outputs": [{ "type": "bool" }]
+    },
+    {
+      "type": "function",
+      "name": "registerExistingCollection",
+      "stateMutability": "nonpayable",
+      "inputs": [
+        { "name": "collection", "type": "address" },
+        { "name": "ownerHint", "type": "address" }
+      ],
+      "outputs": []
+    },
+    {
+      "type": "function",
+      "name": "owner",
+      "stateMutability": "view",
+      "inputs": [],
+      "outputs": [{ "type": "address" }]
+    }
+  ] as const satisfies Abi,
+
+  packCollectionAbi: [
+    { "type": "function", "name": "mintPacks", "stateMutability": "payable", "inputs": [{ "name": "amount", "type": "uint256" }], "outputs": [] },
+    { "type": "function", "name": "openPack", "stateMutability": "nonpayable", "inputs": [{ "name": "amount", "type": "uint256" }], "outputs": [] },
+    { "type": "function", "name": "uri", "stateMutability": "view", "inputs": [{ "name": "id", "type": "uint256" }], "outputs": [{ "type": "string" }] },
+    { "type": "function", "name": "balanceOf", "stateMutability": "view", "inputs": [{ "name": "account", "type": "address" }, { "name": "id", "type": "uint256" }], "outputs": [{ "type": "uint256" }] },
+    { "type": "function", "name": "packPrice", "stateMutability": "view", "inputs": [], "outputs": [{ "type": "uint256" }] },
+    { "type": "function", "name": "maxPacks", "stateMutability": "view", "inputs": [], "outputs": [{ "type": "uint256" }] },
+    { "type": "function", "name": "packsMinted", "stateMutability": "view", "inputs": [], "outputs": [{ "type": "uint256" }] },
+    { "type": "function", "name": "name", "stateMutability": "view", "inputs": [], "outputs": [{ "type": "string" }] },
+    { "type": "function", "name": "symbol", "stateMutability": "view", "inputs": [], "outputs": [{ "type": "string" }] },
+    { "type": "function", "name": "setTokenURI", "stateMutability": "nonpayable", "inputs": [{ "name": "id", "type": "uint256" }, { "name": "newURI", "type": "string" }], "outputs": [] },
+    { "type": "function", "name": "freezeMetadata", "stateMutability": "nonpayable", "inputs": [], "outputs": [] },
+    { "type": "function", "name": "setMarketplace", "stateMutability": "nonpayable", "inputs": [{ "name": "mp", "type": "address" }], "outputs": [] },
+    { "type": "function", "name": "getAllTokenURIs", "stateMutability": "view", "inputs": [], "outputs": [{ "name": "uris", "type": "string[6]" }] },
+    { "type": "function", "name": "packTokenId", "stateMutability": "pure", "inputs": [], "outputs": [{ "type": "uint256" }] },
+    { "type": "function", "name": "cardTokenIds", "stateMutability": "pure", "inputs": [], "outputs": [{ "name": "ids", "type": "uint256[5]" }] },
+    { "type": "function", "name": "packsRemaining", "stateMutability": "view", "inputs": [], "outputs": [{ "type": "uint256" }] }
+  ] as const satisfies Abi,
 
     /* ─── helpers ─── */
   imageGateway: (collection: string, id: bigint | number) =>
