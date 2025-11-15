@@ -50,29 +50,26 @@ export default function PackOpeningAnimation({
 }: PackOpeningAnimationProps) {
   const [showNFTs, setShowNFTs] = useState(false);
   const [showBlast, setShowBlast] = useState(false);
-  const [hasAnimated, setHasAnimated] = useState(false);
 
   useEffect(() => {
-    if (isOpen && !hasAnimated) {
-      // Reset states only if we haven't animated yet
+    if (isOpen) {
+      // Reset states when opening
       setShowBlast(true);
       setShowNFTs(false);
-      setHasAnimated(true);
       
       // Blast effect delay
       const timer = setTimeout(() => {
         setShowBlast(false);
         setShowNFTs(true);
-      }, 800);
+      }, 1500); // Increased delay to let animation complete
       
       return () => clearTimeout(timer);
-    } else if (!isOpen) {
+    } else {
       // Reset when closed
       setShowNFTs(false);
       setShowBlast(false);
-      setHasAnimated(false);
     }
-  }, [isOpen, hasAnimated]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -86,31 +83,41 @@ export default function PackOpeningAnimation({
             {[0, 1, 2, 3].map((i) => (
               <div
                 key={i}
-                className="absolute inset-0 rounded-full border-4 border-purple-500/50 animate-ping"
+                className="absolute inset-0 rounded-full border-4 border-purple-500/50"
                 style={{
-                  animationDelay: `${i * 0.2}s`,
-                  animationDuration: '0.8s',
+                  animation: `ping 0.8s ease-out ${i * 0.2}s`,
+                  animationIterationCount: 2,
                 }}
               />
             ))}
             
             {/* Central burst */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="w-32 h-32 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-full animate-pulse blur-xl opacity-75" />
-              <Sparkles className="w-24 h-24 text-white animate-spin" />
+              <div 
+                className="w-32 h-32 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-full blur-xl opacity-75"
+                style={{
+                  animation: 'pulse 1s ease-in-out 2',
+                }}
+              />
+              <Sparkles 
+                className="w-24 h-24 text-white"
+                style={{
+                  animation: 'spin 1s linear 2',
+                }}
+              />
             </div>
             
             {/* Particle effects */}
             {Array.from({ length: 20 }).map((_, i) => (
               <div
                 key={i}
-                className="absolute w-2 h-2 bg-white rounded-full animate-ping"
+                className="absolute w-2 h-2 bg-white rounded-full"
                 style={{
                   left: '50%',
                   top: '50%',
                   transform: `rotate(${i * 18}deg) translateY(-150px)`,
-                  animationDelay: `${i * 0.05}s`,
-                  animationDuration: '1s',
+                  animation: `ping 1s ease-out ${i * 0.05}s`,
+                  animationIterationCount: 1,
                 }}
               />
             ))}
@@ -222,6 +229,35 @@ export default function PackOpeningAnimation({
           to {
             opacity: 1;
             transform: scale(1);
+          }
+        }
+
+        @keyframes ping {
+          0% {
+            transform: scale(1);
+            opacity: 1;
+          }
+          75%, 100% {
+            transform: scale(2);
+            opacity: 0;
+          }
+        }
+
+        @keyframes pulse {
+          0%, 100% {
+            opacity: 0.75;
+          }
+          50% {
+            opacity: 1;
+          }
+        }
+
+        @keyframes spin {
+          from {
+            transform: rotate(0deg);
+          }
+          to {
+            transform: rotate(360deg);
           }
         }
 
