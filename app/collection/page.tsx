@@ -389,7 +389,16 @@ function Inner() {
   }, [allCollections, physicalNftMetadata]);
 
   /* filter by keyword (memoised) */
-  const filteredCollections = useMemo(() => {
+  const filteredCollections = useMemo<Array<{
+    address: string;
+    name: string;
+    symbol: string;
+    baseURI: string;
+    maxSupply: bigint;
+    mintPrice: bigint;
+    owner: string;
+    type: 'erc1155' | 'single' | 'pack';
+  }>>(() => {
     if (!keyword) return processedPhysicalNft;
     return processedPhysicalNft.filter((col) =>
       col.name?.toLowerCase().includes(keyword)
