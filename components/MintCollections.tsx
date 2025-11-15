@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import Image from 'next/image';
 import toast from 'react-hot-toast';
 import { usePrivy, useWallets } from '@privy-io/react-auth';
+import PackCard from '@/components/PackCard';
 
 // Helper function to convert IPFS URI to HTTP URL
 const ipfsToHttp = (uri: string): string => {
@@ -29,12 +30,35 @@ interface CollectionInfo {
   owner: string;
 }
 
+interface NFTMetadata {
+  name: string;
+  description: string;
+  image: string;
+  attributes: Array<{
+    trait_type: string;
+    value: string;
+  }>;
+}
+
+interface PackInfo {
+  packAddress: string;
+  name: string;
+  symbol: string;
+  packPrice: bigint;
+  maxPacks: bigint;
+  packsMinted: bigint;
+  packImageUri?: string;
+  nftMetadata: NFTMetadata[];
+}
+
 export default function MintCollections() {
   const [collections, setCollections] = useState<CollectionInfo[]>([]);
+  const [packs, setPacks] = useState<PackInfo[]>([]);
   const publicClient = usePublicClient({ chainId: 84532 });
 
   // Debug contract address
   console.log('Factory Contract Address:', CONTRACTS.singleFactory);
+  console.log('Pack Factory Contract Address:', CONTRACTS.packFactory);
 
   const { ready, authenticated, login, logout } = usePrivy();
   const { wallets } = useWallets();
@@ -44,7 +68,12 @@ export default function MintCollections() {
     address: CONTRACTS.singleFactory as `0x${string}`,
     abi: CONTRACTS.singleFactoryAbi,
     functionName: 'totalCollections',
+    query: {
+      enabled: !!CONTRACTS.singleFactory,
+    }
   });
+
+  const [isLoadingPacks, setIsLoadingPacks] = useState(false);
 
   // Fetch collections when total count is available
   useEffect(() => {
@@ -161,6 +190,185 @@ export default function MintCollections() {
     fetchCollections();
   }, [totalCollections, publicClient]);
 
+  // Fetch packs from database
+  useEffect(() => {
+    const fetchPacks = async () => {
+      setIsLoadingPacks(true);
+      try {
+        console.log('Fetching packs from API...');
+        const response = await fetch('/api/packs/active');
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.error('API response not OK:', response.status, errorData);
+          throw new Error(`Failed to fetch packs: ${response.status}`);
+        }
+        
+        const dbPacks = await response.json();
+        console.log('Fetched packs from database:', dbPacks);
+        
+        if (!Array.isArray(dbPacks)) {
+          console.error('Invalid packs data:', dbPacks);
+          setPacks([]);
+          return;
+        }
+        
+        if (dbPacks.length === 0) {
+          console.log('No packs found in database');
+          setPacks([]);
+          return;
+        }
+        
+        const packsList: PackInfo[] = [];
+        
+        for (const dbPack of dbPacks) {
+          try {
+            // Parse JSON strings from database
+            let nftImageUris: string[] = [];
+            let allTokenUris: string[] = [];
+            
+            try {
+              nftImageUris = JSON.parse(dbPack.nft_image_uris || '[]') as string[];
+            } catch (e) {
+              console.warn('Failed to parse nft_image_uris for pack', dbPack.id, e);
+            }
+            
+            try {
+              allTokenUris = JSON.parse(dbPack.all_token_uris || '[]') as string[];
+            } catch (e) {
+              console.warn('Failed to parse all_token_uris for pack', dbPack.id, e);
+            }
+            
+            // Fetch metadata for each of the 5 NFTs (use image URIs as fallback)
+            const nftMetadataPromises = Array.from({ length: 5 }, async (_, index) => {
+              const tokenUri = allTokenUris[index];
+              const imageUri = nftImageUris[index];
+              
+              // Skip if tokenUri is a placeholder
+              if (!tokenUri || tokenUri === 'ipfs://...' || tokenUri.includes('...')) {
+                return {
+                  name: `NFT ${index + 1}`,
+                  description: '',
+                  image: imageUri || '/cardifyN.png',
+                  attributes: []
+                } as NFTMetadata;
+              }
+              
+              try {
+                // Convert IPFS URI to HTTP URL if needed
+                let httpUrl = tokenUri;
+                if (httpUrl.startsWith('ipfs://')) {
+                  // Remove ipfs:// prefix
+                  const ipfsHash = httpUrl.replace('ipfs://', '').replace(/^\/+/, '');
+                  httpUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+                }
+                
+                console.log(`Fetching metadata for NFT ${index} from:`, httpUrl);
+                
+                // Fetch metadata with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 10000);
+                
+                try {
+                  const response = await fetch(httpUrl, { 
+                    signal: controller.signal,
+                    headers: {
+                      'Accept': 'application/json',
+                    }
+                  });
+                  clearTimeout(timeoutId);
+                  
+                  if (response.ok) {
+                    const metadata = await response.json();
+                    console.log(`✅ Fetched metadata for NFT ${index}:`, metadata);
+                    
+                    // Ensure image is set, use imageUri as fallback
+                    if (!metadata.image && imageUri) {
+                      metadata.image = imageUri;
+                    }
+                    
+                    return metadata as NFTMetadata;
+                  } else {
+                    console.warn(`❌ Failed to fetch metadata for NFT ${index}:`, response.status, response.statusText);
+                  }
+                } catch (fetchError) {
+                  clearTimeout(timeoutId);
+                  console.warn(`❌ Error fetching metadata for NFT ${index}:`, fetchError);
+                  throw fetchError;
+                }
+              } catch (error) {
+                console.warn(`Error fetching metadata for NFT ${index}:`, error);
+              }
+              
+              // Return default metadata with image from nft_image_uris if available
+              const fallbackImage = imageUri ? (imageUri.startsWith('ipfs://') 
+                ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
+                : imageUri) 
+                : '/cardifyN.png';
+              
+              console.log(`⚠️ Using fallback metadata for NFT ${index} with image:`, fallbackImage);
+              
+              return {
+                name: `NFT ${index + 1}`,
+                description: '',
+                image: fallbackImage,
+                attributes: []
+              } as NFTMetadata;
+            });
+            
+            const nftMetadata = await Promise.all(nftMetadataPromises);
+            
+            // Get packsMinted from blockchain if available (non-blocking)
+            let packsMinted = 0n;
+            if (publicClient && dbPack.collection_address) {
+              try {
+                const result = await Promise.race([
+                  publicClient.readContract({
+                    address: dbPack.collection_address as `0x${string}`,
+                    abi: CONTRACTS.packCollectionAbi,
+                    functionName: 'packsMinted',
+                  }),
+                  new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000))
+                ]) as bigint;
+                packsMinted = result;
+              } catch (error) {
+                console.warn('Error fetching packsMinted from blockchain (non-critical):', error);
+              }
+            }
+            
+            const packInfo: PackInfo = {
+              packAddress: dbPack.collection_address,
+              name: dbPack.name || 'Unnamed Pack',
+              symbol: dbPack.symbol || 'PACK',
+              packPrice: BigInt(dbPack.pack_price_wei || '0'),
+              maxPacks: BigInt(dbPack.max_packs || '0'),
+              packsMinted: packsMinted,
+              packImageUri: dbPack.pack_image_uri,
+              nftMetadata: nftMetadata
+            };
+            
+            packsList.push(packInfo);
+            console.log('Added pack:', packInfo.name);
+          } catch (error) {
+            console.error(`Error processing pack ${dbPack.id}:`, error);
+            // Continue processing other packs even if one fails
+          }
+        }
+        
+        console.log(`Successfully processed ${packsList.length} packs:`, packsList);
+        setPacks(packsList);
+      } catch (error: any) {
+        console.error('Error fetching packs:', error);
+        toast.error(`Failed to load packs: ${error.message || 'Unknown error'}`);
+        setPacks([]); // Set empty array on error
+      } finally {
+        setIsLoadingPacks(false);
+      }
+    };
+    
+    fetchPacks();
+  }, [publicClient]);
+
   const { writeContract, isError: mintError, isPending: isMinting, isSuccess: mintSuccess } = useWriteContract();
 
   /* ensure network ------------------------------------------ */
@@ -267,7 +475,7 @@ export default function MintCollections() {
     }
   }, [isMinting, mintSuccess, mintError]);
 
-  if (isLoadingCollections) {
+  if (isLoadingCollections || isLoadingPacks) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-500"></div>
@@ -309,7 +517,13 @@ export default function MintCollections() {
       </div>
 
       <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
-        {collections.map((collection) => (
+        {/* Display Packs */}
+        {packs.length > 0 && packs.map((pack) => (
+          <PackCard key={pack.packAddress} pack={pack} />
+        ))}
+        
+        {/* Display Regular Collections */}
+        {collections.length > 0 && collections.map((collection) => (
           <Card 
             key={collection.collectionAddress} 
             className="overflow-hidden bg-gradient-to-b from-gray-900 to-black border border-gray-800 hover:border-purple-500 transition-all duration-300"
@@ -378,6 +592,13 @@ export default function MintCollections() {
             </div>
           </Card>
         ))}
+        
+        {/* Show message if no packs or collections */}
+        {packs.length === 0 && collections.length === 0 && !isLoadingCollections && !isLoadingPacks && (
+          <div className="col-span-full text-center py-12">
+            <p className="text-gray-400 text-lg">No packs or collections available yet.</p>
+          </div>
+        )}
       </div>
     </div>
   );
