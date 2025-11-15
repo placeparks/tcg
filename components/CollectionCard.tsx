@@ -10,7 +10,7 @@ interface Props {
   address: string
   preview: string
   tokenId?: bigint | number // default 0 for collection cover if you want
-  type?: 'erc1155' | 'single' // collection type for hybrid badge
+  type?: 'erc1155' | 'single' | 'pack' // collection type for hybrid badge
 }
 
 export default function CollectionCard({ address, preview, tokenId = 0n, type = 'single' }: Props) {
@@ -82,6 +82,14 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
             <div className="absolute top-3 right-3 z-10">
               <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
                 Hybrid
+              </div>
+            </div>
+          )}
+          {/* Pack Badge for Pack collections */}
+          {type === 'pack' && (
+            <div className="absolute top-3 right-3 z-10">
+              <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
+                Pack
               </div>
             </div>
           )}
@@ -160,9 +168,11 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
               <div className={`text-xs px-2 py-1 rounded font-medium ${
                 type === 'erc1155' 
                   ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
+                  : type === 'pack'
+                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
                   : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
               }`}>
-                {type === 'erc1155' ? 'ERC1155' : 'Single'}
+                {type === 'erc1155' ? 'ERC1155' : type === 'pack' ? 'Pack' : 'Single'}
               </div>
             </div>
           </div>
