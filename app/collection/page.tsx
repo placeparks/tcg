@@ -443,7 +443,7 @@ function Inner() {
                 <CollectionCard
                   address={col.address}
                   preview={CONTRACTS.collectionPreview(col.address)}
-                  type={col.type}
+                  type={col.type as 'erc1155' | 'single' | 'pack'}
                 />
               </div>
             ))}
