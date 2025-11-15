@@ -357,7 +357,16 @@ function Inner() {
     fetchMetadata();
   }, [allCollections, publicClient]);
 
-  const processedPhysicalNft = useMemo(() => {
+  const processedPhysicalNft = useMemo<Array<{
+    address: string;
+    name: string;
+    symbol: string;
+    baseURI: string;
+    maxSupply: bigint;
+    mintPrice: bigint;
+    owner: string;
+    type: 'erc1155' | 'single' | 'pack';
+  }>>(() => {
     if (!allCollections) return [];
     const flatCollections = allCollections.flat();
     const processed = flatCollections.map((collection) => {
@@ -371,7 +380,7 @@ function Inner() {
         maxSupply: metadata?.maxSupply || 0n,
         mintPrice: metadata?.mintPrice || 0n,
         owner: metadata?.owner || '',
-        type: type
+        type: type as 'erc1155' | 'single' | 'pack'
       };
     });
     console.log('🟣 Processed Physical+NFT Collections:', processed);
