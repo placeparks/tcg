@@ -2,7 +2,7 @@
 import { useReadContracts } from "wagmi";
 import { CONTRACTS } from "@/lib/contract";
 
-export function useCollectionMeta(address: `0x${string}`, type: 'erc1155' | 'single' = 'single') {
+export function useCollectionMeta(address: `0x${string}`, type: 'erc1155' | 'single' | 'pack' = 'single') {
   const { data, isLoading, isError } = useReadContracts({
     contracts: type === 'erc1155'
       ? ([
@@ -10,6 +10,12 @@ export function useCollectionMeta(address: `0x${string}`, type: 'erc1155' | 'sin
           { address, abi: CONTRACTS.nft1155Abi, functionName: "symbol" },
           { address, abi: CONTRACTS.nft1155Abi, functionName: "uri", args: [0n] as const },
           { address, abi: CONTRACTS.nft1155Abi, functionName: "baseUri" },
+        ] as const)
+      : type === 'pack'
+      ? ([
+          { address, abi: CONTRACTS.packCollectionAbi, functionName: "name" },
+          { address, abi: CONTRACTS.packCollectionAbi, functionName: "symbol" },
+          { address, abi: CONTRACTS.packCollectionAbi, functionName: "uri", args: [5n] as const },
         ] as const)
       : ([
           { address, abi: CONTRACTS.singleCollectionAbi, functionName: "name" },
