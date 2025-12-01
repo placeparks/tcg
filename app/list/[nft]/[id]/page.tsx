@@ -95,8 +95,8 @@ export default function ListingPage() {
   /* tokenURI - using ERC1155 uri instead */
   const { data: tokenUri } = useReadContract({
     address: nftAddr,
-    abi:     CONTRACTS.nft1155Abi, // Using ERC1155 ABI instead of commented out nftAbi
-    functionName: "uri", // ERC1155 uses uri instead of tokenURI
+    abi:     CONTRACTS.nft1155Abi,
+    functionName: "uri",
     args:   [tokenId],
   });
 
@@ -108,7 +108,6 @@ export default function ListingPage() {
     
     const fetchMetadata = async () => {
       try {
-        // First try the primary gateway
         const metadataUrl = ipfsToHttp(tokenUri as string);
         console.log('🔍 Converted to HTTP URL:', metadataUrl);
         
@@ -121,20 +120,16 @@ export default function ListingPage() {
         });
         
         if (response.ok) {
-          // Check content type before parsing
           const contentType = response.headers.get('content-type');
           console.log('🔍 Response content type:', contentType);
           
-          // Check if it's an image or other binary content first
           if (contentType && (contentType.includes('image/') || contentType.includes('video/') || contentType.includes('audio/'))) {
-            console.log('🔍 Content appears to be binary (image/video/audio), not JSON metadata');
-            console.log('🔍 Creating fallback metadata with image URL');
+            console.log('🔍 Content appears to be binary, creating fallback metadata');
             
-            // Create fallback metadata when IPFS points directly to an image
             const fallbackMetadata = {
               name: `NFT #${tokenId.toString()}`,
               description: `Token ID: ${tokenId.toString()}`,
-              image: response.url, // Use the IPFS URL as the image
+              image: response.url,
               external_url: response.url
             };
             
@@ -145,11 +140,9 @@ export default function ListingPage() {
           
           if (!contentType || !contentType.includes('application/json')) {
             console.warn('⚠️ Response is not JSON, content type:', contentType);
-            // Try to get text first to see what we're dealing with
             const text = await response.text();
             console.log('🔍 Raw response text:', text.substring(0, 200) + '...');
             
-            // Try to parse as JSON anyway (sometimes content-type is wrong)
             try {
               const data = JSON.parse(text);
               console.log('🔍 Metadata data received:', data);
@@ -157,7 +150,7 @@ export default function ListingPage() {
               return;
             } catch (parseError) {
               console.error('❌ Failed to parse as JSON:', parseError);
-              throw new Error(`Invalid JSON response. Content type: ${contentType}. Raw content preview: ${text.substring(0, 100)}`);
+              throw new Error(`Invalid JSON response. Content type: ${contentType}`);
             }
           }
           
@@ -167,15 +160,12 @@ export default function ListingPage() {
           return;
         }
         
-        // If primary gateway fails, try multiple gateways
         console.log('🔄 Primary gateway failed, trying multiple gateways...');
         const fallbackResponse = await tryMultipleGateways(tokenUri as string);
         
-        // Check content type for fallback response too
         const fallbackContentType = fallbackResponse.headers.get('content-type');
         console.log('🔍 Fallback response content type:', fallbackContentType);
         
-        // Check if fallback is also an image first
         if (fallbackContentType && (fallbackContentType.includes('image/') || fallbackContentType.includes('video/') || fallbackContentType.includes('audio/'))) {
           console.log('🔍 Fallback content is also binary, creating fallback metadata');
           
@@ -192,7 +182,7 @@ export default function ListingPage() {
         }
         
         if (!fallbackContentType || !fallbackContentType.includes('application/json')) {
-          console.warn('⚠️ Fallback response is not JSON, content type:', fallbackContentType);
+          console.warn('⚠️ Fallback response is not JSON');
           const text = await fallbackResponse.text();
           console.log('🔍 Raw fallback response text:', text.substring(0, 200) + '...');
           
@@ -203,7 +193,7 @@ export default function ListingPage() {
             return;
           } catch (parseError) {
             console.error('❌ Failed to parse fallback as JSON:', parseError);
-            throw new Error(`Invalid JSON response from fallback. Content type: ${fallbackContentType}`);
+            throw new Error(`Invalid JSON response from fallback`);
           }
         }
         
@@ -221,7 +211,7 @@ export default function ListingPage() {
     };
     
     fetchMetadata();
-  }, [tokenUri]);
+  }, [tokenUri, tokenId]);
 
   /* ---------------- list flow ---------------- */
   async function listItem() {
@@ -257,332 +247,124 @@ export default function ListingPage() {
     });
 
     try {
+      // Determine the correct token id to list (packs use a dedicated packTokenId)
+      let listingId = tokenId;
+      try {
+        const packId = await publicClient.readContract({
+          address: nftAddr,
+          abi: CONTRACTS.packCollectionAbi,
+          functionName: 'packTokenId',
+        });
+        if (typeof packId === 'bigint') {
+          listingId = packId as bigint;
+          console.log('Using packTokenId for listing:', listingId.toString());
+        }
+      } catch (_) {
+        // Not a pack collection or function not present; keep route tokenId
+      }
+
       setBusy(true);
       toast.loading("Checking approval…", { id: "tx" });
 
-      // Check approval - try both ERC1155 and ERC721
+      // Check ERC1155 approval
       let approved = false;
-      let detectedTokenType = 'ERC1155'; // Default assumption
       
       try {
-        // Try ERC1155 isApprovedForAll first
         approved = (await publicClient.readContract({
-        address: nftAddr,
+          address: nftAddr,
           abi: CONTRACTS.nft1155Abi,
-        functionName: "isApprovedForAll",
-        args: [address, CONTRACTS.marketplace],
-      })) as boolean;
+          functionName: "isApprovedForAll",
+          args: [address, CONTRACTS.marketplace],
+        })) as boolean;
         console.log('🔍 ERC1155 approval status:', approved);
-      } catch (erc1155ApprovalErr) {
-        console.log('🔍 Not ERC1155, trying ERC721 getApproved');
-        try {
-          // Try ERC721 getApproved
-          const approvedAddress = await publicClient.readContract({
-            address: nftAddr,
-            abi: [
-              {
-                "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-                "name": "getApproved",
-                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                "stateMutability": "view",
-                "type": "function"
-              }
-            ],
-            functionName: "getApproved",
-            args: [tokenId],
-          });
-          approved = approvedAddress.toLowerCase() === CONTRACTS.marketplace.toLowerCase();
-          detectedTokenType = 'ERC721';
-          console.log('🔍 ERC721 approval status:', approved, 'approved address:', approvedAddress);
-        } catch (erc721ApprovalErr) {
-          console.error('❌ Could not check approval with either ERC1155 or ERC721:', { erc1155ApprovalErr, erc721ApprovalErr });
-          // Assume ERC1155 and proceed
-          console.log('🔍 Assuming ERC1155 and proceeding...');
-        }
+      } catch (approvalErr) {
+        console.error('❌ Could not check approval:', approvalErr);
+        toast.dismiss("tx");
+        toast.error("Could not check NFT approval status");
+        return;
       }
 
       if (!approved) {
         toast.loading("Approving NFT…", { id: "tx" });
-        if (detectedTokenType === 'ERC721') {
-          console.log('🔍 Setting ERC721 approval...');
-          try {
-            await writeContractAsync({
-              address: nftAddr,
-              abi: [
-                {
-                  "inputs": [
-                    {"internalType": "address", "name": "to", "type": "address"},
-                    {"internalType": "uint256", "name": "tokenId", "type": "uint256"}
-                  ],
-                  "name": "approve",
-                  "outputs": [],
-                  "stateMutability": "nonpayable",
-                  "type": "function"
-                }
-              ],
-              functionName: "approve",
-              args: [CONTRACTS.marketplace, tokenId],
-            });
-            console.log('✅ ERC721 approval set successfully');
-          } catch (approvalError: any) {
-            console.error('❌ ERC721 approval failed:', approvalError);
-            throw new Error(`Failed to set ERC721 approval: ${approvalError?.message || 'Unknown error'}`);
+        console.log('🔍 Setting approval for all (ERC1155)...');
+        
+        try {
+          const approvalHash = await writeContractAsync({
+            address: nftAddr,
+            abi: CONTRACTS.nft1155Abi,
+            functionName: "setApprovalForAll",
+            args: [CONTRACTS.marketplace, true],
+          });
+          
+          console.log('🔍 Approval transaction submitted:', approvalHash);
+          
+          // Wait for approval to be confirmed
+          toast.loading("Waiting for approval confirmation…", { id: "tx" });
+          const approvalReceipt = await publicClient.waitForTransactionReceipt({ 
+            hash: approvalHash 
+          });
+          
+          if (approvalReceipt.status !== "success") {
+            console.error('❌ Approval transaction failed:', approvalReceipt);
+            toast.dismiss("tx");
+            toast.error("Approval transaction failed");
+            return;
           }
-        } else {
-          console.log('🔍 Setting approval for all (ERC1155)...');
-          try {
-            await writeContractAsync({
-              address: nftAddr,
-              abi: CONTRACTS.nft1155Abi,
-              functionName: "setApprovalForAll",
-              args: [CONTRACTS.marketplace, true],
-            });
-            console.log('✅ ERC1155 approval set successfully');
-          } catch (approvalError: any) {
-            console.error('❌ ERC1155 approval failed:', approvalError);
-            throw new Error(`Failed to set approval: ${approvalError?.message || 'Unknown error'}`);
+          
+          console.log('✅ ERC1155 approval confirmed on-chain');
+          
+          // Verify approval was actually set
+          const nowApproved = await publicClient.readContract({
+            address: nftAddr,
+            abi: CONTRACTS.nft1155Abi,
+            functionName: "isApprovedForAll",
+            args: [address, CONTRACTS.marketplace],
+          });
+          
+          console.log('🔍 Approval verification after setting:', nowApproved);
+          
+          if (!nowApproved) {
+            toast.dismiss("tx");
+            toast.error("Approval was not set correctly. Please try again.");
+            return;
           }
+        } catch (approvalError: any) {
+          console.error('❌ ERC1155 approval failed:', approvalError);
+          toast.dismiss("tx");
+          toast.error(`Failed to approve NFT: ${approvalError?.message || 'Unknown error'}`);
+          return;
         }
       }
 
-      // Check if user owns the NFT and has enough balance
+      // Check NFT ownership and balance
       toast.loading("Checking NFT ownership…", { id: "tx" });
       
       try {
-        // First try ERC1155 balanceOf
-        let balance;
-        let isERC721 = false;
+        const balance = await publicClient.readContract({
+          address: nftAddr,
+          abi: CONTRACTS.nft1155Abi,
+          functionName: "balanceOf",
+          args: [address, listingId],
+        });
         
-        try {
-          balance = await publicClient.readContract({
-            address: nftAddr,
-            abi: CONTRACTS.nft1155Abi,
-            functionName: "balanceOf",
-            args: [address, tokenId],
-          });
-          console.log('🔍 ERC1155 balance:', balance);
-          
-          // If ERC1155 balance is 0, try ERC721 ownerOf as fallback
-          if (balance === 0n) {
-            console.log('🔍 ERC1155 balance is 0, trying ERC721 ownerOf as fallback');
-            try {
-              const owner = await publicClient.readContract({
-                address: nftAddr,
-                abi: [
-                  {
-                    "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-                    "name": "ownerOf",
-                    "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                    "stateMutability": "view",
-                    "type": "function"
-                  }
-                ],
-                functionName: "ownerOf",
-                args: [tokenId],
-              });
-              console.log('🔍 ERC721 owner:', owner);
-              if (owner.toLowerCase() === address.toLowerCase()) {
-                balance = 1n;
-                isERC721 = true;
-                console.log('🔍 Found ownership via ERC721 ownerOf');
-              }
-            } catch (erc721FallbackErr) {
-              console.log('🔍 ERC721 fallback also failed:', erc721FallbackErr);
-              
-              // Try alternative ownership checks
-              console.log('🔍 Trying alternative ownership verification methods...');
-              
-              // Try to check if the token exists at all
-              try {
-                const tokenExists = await publicClient.readContract({
-                  address: nftAddr,
-                  abi: [
-                    {
-                      "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-                      "name": "exists",
-                      "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-                      "stateMutability": "view",
-                      "type": "function"
-                    }
-                  ],
-                  functionName: "exists",
-                  args: [tokenId],
-                });
-                console.log('🔍 Token exists check:', tokenExists);
-              } catch (existsErr) {
-                console.log('🔍 Token exists check failed:', existsErr);
-                
-                // Try to check maxSupply and totalMinted for your contracts
-                try {
-                  const maxSupply = await publicClient.readContract({
-                    address: nftAddr,
-                    abi: [
-                      {
-                        "inputs": [],
-                        "name": "maxSupply",
-                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                        "stateMutability": "view",
-                        "type": "function"
-                      }
-                    ],
-                    functionName: "maxSupply",
-                    args: [],
-                  });
-                  console.log('🔍 Max supply:', maxSupply);
-                } catch (maxSupplyErr) {
-                  console.log('🔍 Max supply check failed:', maxSupplyErr);
-                }
-                
-                try {
-                  const totalMinted = await publicClient.readContract({
-                    address: nftAddr,
-                    abi: [
-                      {
-                        "inputs": [],
-                        "name": "totalMinted",
-                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                        "stateMutability": "view",
-                        "type": "function"
-                      }
-                    ],
-                    functionName: "totalMinted",
-                    args: [],
-                  });
-                  console.log('🔍 Total minted:', totalMinted);
-                } catch (totalMintedErr) {
-                  console.log('🔍 Total minted check failed:', totalMintedErr);
-                }
-              }
-              
-              // Try to get total supply to see if contract is working
-              try {
-                const totalSupply = await publicClient.readContract({
-                  address: nftAddr,
-                  abi: [
-                    {
-                      "inputs": [],
-                      "name": "totalSupply",
-                      "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                      "stateMutability": "view",
-                      "type": "function"
-                    }
-                  ],
-                  functionName: "totalSupply",
-                  args: [],
-                });
-                console.log('🔍 Total supply:', totalSupply);
-              } catch (supplyErr) {
-                console.log('🔍 Total supply check failed:', supplyErr);
-              }
-              
-              // Try to check if this is a valid token ID by checking token URI
-              try {
-                const tokenURI = await publicClient.readContract({
-                  address: nftAddr,
-                  abi: CONTRACTS.nft1155Abi,
-                  functionName: "uri",
-                  args: [tokenId],
-                });
-                console.log('🔍 Token URI:', tokenURI);
-              } catch (uriErr) {
-                console.log('🔍 Token URI check failed:', uriErr);
-              }
-              
-              // Check if token ID 0 exists (first token in your contracts)
-              try {
-                const balance0 = await publicClient.readContract({
-                  address: nftAddr,
-                  abi: CONTRACTS.nft1155Abi,
-                  functionName: "balanceOf",
-                  args: [address, 0n],
-                });
-                console.log('🔍 Balance of token ID 0:', balance0);
-              } catch (balance0Err) {
-                console.log('🔍 Balance of token ID 0 failed:', balance0Err);
-              }
-              
-              // Check if you own any tokens at all by checking a range
-              for (let i = 0; i < 5; i++) {
-                try {
-                  const balance = await publicClient.readContract({
-                    address: nftAddr,
-                    abi: CONTRACTS.nft1155Abi,
-                    functionName: "balanceOf",
-                    args: [address, BigInt(i)],
-                  });
-                  if (balance > 0n) {
-                    console.log(`🔍 Found balance > 0 for token ID ${i}:`, balance);
-                  }
-                } catch (rangeErr) {
-                  // Ignore individual errors
-                }
-              }
-            }
-          }
-        } catch (erc1155Err) {
-          console.log('🔍 ERC1155 balanceOf failed, trying ERC721 ownerOf');
-          // Try ERC721 ownerOf instead
-          try {
-            const owner = await publicClient.readContract({
-              address: nftAddr,
-              abi: [
-                {
-                  "inputs": [{"internalType": "uint256", "name": "tokenId", "type": "uint256"}],
-                  "name": "ownerOf",
-                  "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                  "stateMutability": "view",
-                  "type": "function"
-                }
-              ],
-              functionName: "ownerOf",
-              args: [tokenId],
-            });
-            console.log('🔍 ERC721 owner:', owner);
-            balance = owner.toLowerCase() === address.toLowerCase() ? 1n : 0n;
-            isERC721 = true;
-          } catch (erc721Err) {
-            console.error('❌ Could not check ownership with either ERC1155 or ERC721:', { erc1155Err, erc721Err });
-            
-            // Try one more approach - check if the contract has any tokens at all
-            console.log('🔍 Trying to verify contract functionality...');
-            try {
-              // Check if contract has any tokens by trying to get the first token
-              const firstToken = await publicClient.readContract({
-                address: nftAddr,
-                abi: [
-                  {
-                    "inputs": [{"internalType": "uint256", "name": "index", "type": "uint256"}],
-                    "name": "tokenByIndex",
-                    "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                    "stateMutability": "view",
-                    "type": "function"
-                  }
-                ],
-                functionName: "tokenByIndex",
-                args: [0n],
-              });
-              console.log('🔍 First token by index:', firstToken);
-            } catch (tokenByIndexErr) {
-              console.log('🔍 Token by index check failed:', tokenByIndexErr);
-            }
-            
-            throw new Error('Could not verify NFT ownership - contract may not be ERC1155 or ERC721');
-          }
-        }
-        
-        console.log('🔍 Final balance check:', balance, 'isERC721:', isERC721);
+        console.log('🔍 ERC1155 balance:', balance);
+        console.log('🔍 Balance check - Your address:', address);
+        console.log('🔍 Balance check - Token ID:', tokenId.toString());
+        console.log('🔍 Balance check - NFT contract:', nftAddr);
         
         if (balance < 1n) {
           toast.dismiss("tx");
-          toast.error("You don't own this NFT or don't have enough balance. Please verify the token ID and contract address.");
+          
+          // Provide helpful message about Pack vs Card tokens
+          if (tokenId > 0n) {
+            toast.error(`You don't own token #${tokenId}. Note: Card tokens (ID 1+) are only created when you open packs. Try listing a pack (token ID 0) or open a pack first to get cards.`);
+          } else {
+            toast.error("You don't own this NFT. Please verify the token ID.");
+          }
           return;
         }
         
-        // Update the detected token type for later use
-        if (isERC721) {
-          detectedTokenType = 'ERC721';
-          console.log('🔍 Setting token type to ERC721 for subsequent operations');
-        }
+        console.log('✅ Balance check passed - you own', balance.toString(), 'of token ID', tokenId.toString());
       } catch (balanceErr: any) {
         console.error('❌ Could not check NFT balance:', balanceErr);
         toast.dismiss("tx");
@@ -598,7 +380,7 @@ export default function ListingPage() {
           address: CONTRACTS.marketplace,
           abi: CONTRACTS.marketplaceAbi,
           functionName: "listings1155",
-          args: [nftAddr, tokenId],
+          args: [nftAddr, listingId],
         });
         
         console.log('🔍 Existing listing:', existingListing);
@@ -610,90 +392,92 @@ export default function ListingPage() {
           return;
         }
       } catch (listingErr: any) {
-        console.log('🔍 Could not check existing listing (this is normal for unlisted NFTs):', listingErr);
+        console.log('🔍 Could not check existing listing:', listingErr);
       }
 
-      // Check if marketplace is paused
+      // Validate NFT contract origin - check all allowed factories
+      toast.loading("Validating NFT contract origin…", { id: "tx" });
+      
+      let isFromAllowedFactory = false;
+      const factoryChecks: Array<{ name: string; address: string; result: boolean }> = [];
+      
+      // Check Factory A (factoryERC1155)
+      if (CONTRACTS.factoryERC1155) {
+        try {
+          console.log('🔍 Checking Factory A (factoryERC1155)...');
+          const isFactoryA = await publicClient.readContract({
+            address: CONTRACTS.factoryERC1155,
+            abi: CONTRACTS.factoryERC1155Abi,
+            functionName: "isCardifyCollection",
+            args: [nftAddr as `0x${string}`],
+          });
+          factoryChecks.push({ name: "Factory A", address: CONTRACTS.factoryERC1155, result: isFactoryA });
+          if (isFactoryA) {
+            console.log('✅ NFT contract recognized by Factory A');
+            isFromAllowedFactory = true;
+          }
+        } catch (err: any) {
+          console.error('❌ Factory A check failed:', err);
+          factoryChecks.push({ name: "Factory A", address: CONTRACTS.factoryERC1155, result: false });
+        }
+      }
+      
+      // Check Factory B (singleFactory)
+      if (!isFromAllowedFactory && CONTRACTS.singleFactory) {
+        try {
+          console.log('🔍 Checking Factory B (singleFactory)...');
+          const isFactoryB = await publicClient.readContract({
+            address: CONTRACTS.singleFactory,
+            abi: CONTRACTS.singleFactoryAbi,
+            functionName: "isCardifyCollection",
+            args: [nftAddr as `0x${string}`],
+          });
+          factoryChecks.push({ name: "Factory B", address: CONTRACTS.singleFactory, result: isFactoryB });
+          if (isFactoryB) {
+            console.log('✅ NFT contract recognized by Factory B');
+            isFromAllowedFactory = true;
+          }
+        } catch (err: any) {
+          console.error('❌ Factory B check failed:', err);
+          factoryChecks.push({ name: "Factory B", address: CONTRACTS.singleFactory, result: false });
+        }
+      }
+      
+      // Check Pack Factory
+      if (!isFromAllowedFactory && CONTRACTS.packFactory) {
+        try {
+          console.log('🔍 Checking Pack Factory...');
+          const isPackFactory = await publicClient.readContract({
+            address: CONTRACTS.packFactory,
+            abi: CONTRACTS.packFactoryAbi,
+            functionName: "isCardifyCollection",
+            args: [nftAddr as `0x${string}`],
+          });
+          factoryChecks.push({ name: "Pack Factory", address: CONTRACTS.packFactory, result: isPackFactory });
+          if (isPackFactory) {
+            console.log('✅ NFT contract recognized by Pack Factory');
+            isFromAllowedFactory = true;
+          }
+        } catch (err: any) {
+          console.error('❌ Pack Factory check failed:', err);
+          factoryChecks.push({ name: "Pack Factory", address: CONTRACTS.packFactory, result: false });
+        }
+      }
+      
+      console.log('🔍 Factory validation summary:', factoryChecks);
+      
+      if (!isFromAllowedFactory) {
+        toast.dismiss("tx");
+        const factoryNames = factoryChecks.map(f => f.name).join(", ");
+        toast.error(`This NFT contract was not created by any allowed factory (${factoryNames})`);
+        return;
+      }
+
+      // Check basic marketplace functionality
       toast.loading("Checking marketplace status…", { id: "tx" });
       
       try {
-        const isPaused = await publicClient.readContract({
-          address: CONTRACTS.marketplace,
-          abi: CONTRACTS.marketplaceAbi,
-          functionName: "paused",
-        });
-        
-        console.log('🔍 Marketplace paused status:', isPaused);
-        
-        if (isPaused) {
-          toast.dismiss("tx");
-          toast.error("Marketplace is currently paused");
-          return;
-        }
-      } catch (pauseErr: any) {
-        console.log('🔍 Could not check pause status (this might be normal):', pauseErr);
-      }
-
-      // Check if NFT contract supports the required interface
-      toast.loading("Checking NFT contract interface…", { id: "tx" });
-      
-      try {
-        // Try to check if the NFT contract supports ERC1155 interface
-        // Use a more generic ABI that includes supportsInterface
-        const supportsInterface = await publicClient.readContract({
-          address: nftAddr,
-          abi: [
-            {
-              "inputs": [{"internalType": "bytes4", "name": "interfaceId", "type": "bytes4"}],
-              "name": "supportsInterface",
-              "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-              "stateMutability": "view",
-              "type": "function"
-            }
-          ],
-          functionName: "supportsInterface",
-          args: ["0xd9b67a26"], // ERC1155 interface ID
-        });
-        
-        console.log('🔍 NFT supports ERC1155 interface:', supportsInterface);
-        
-        if (!supportsInterface) {
-          toast.dismiss("tx");
-          toast.error("This NFT contract doesn't support the required ERC1155 interface");
-          return;
-        }
-      } catch (interfaceErr: any) {
-        console.log('🔍 Could not check interface support (contract may not implement ERC165):', interfaceErr);
-        // Don't fail here - some contracts may not implement supportsInterface
-        // but still work with the marketplace
-        console.log('🔍 Proceeding without interface check...');
-      }
-
-      // Try to verify this is actually an ERC1155 contract by checking basic functions
-      toast.loading("Verifying ERC1155 compatibility…", { id: "tx" });
-      
-      try {
-        // Try to call uri function (basic ERC1155 function)
-        const tokenUri = await publicClient.readContract({
-          address: nftAddr,
-          abi: CONTRACTS.nft1155Abi,
-          functionName: "uri",
-          args: [tokenId],
-        });
-        
-        console.log('🔍 NFT URI:', tokenUri);
-        console.log('🔍 Contract appears to be ERC1155 compatible');
-      } catch (uriErr: any) {
-        console.log('🔍 Could not verify ERC1155 compatibility:', uriErr);
-        // This might be normal for some contracts
-        console.log('🔍 Proceeding with listing attempt...');
-      }
-
-      // Check if the marketplace recognizes this NFT contract
-      toast.loading("Checking marketplace compatibility…", { id: "tx" });
-      
-      try {
-        // Try to read a basic marketplace function to see if it works
+        // Verify marketplace is accessible and get owner
         const marketplaceOwner = await publicClient.readContract({
           address: CONTRACTS.marketplace,
           abi: CONTRACTS.marketplaceAbi,
@@ -701,265 +485,193 @@ export default function ListingPage() {
         });
         
         console.log('🔍 Marketplace owner:', marketplaceOwner);
-        console.log('🔍 Marketplace contract is accessible');
+        
+        // Check if the NFT collection has the marketplace set correctly
+        try {
+          const collectionMarketplace = await publicClient.readContract({
+            address: nftAddr,
+            abi: [
+              {
+                "inputs": [],
+                "name": "marketplace",
+                "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+                "stateMutability": "view",
+                "type": "function"
+              }
+            ],
+            functionName: "marketplace",
+          });
+          
+          console.log('🔍 Collection\'s configured marketplace:', collectionMarketplace);
+          console.log('🔍 Expected marketplace:', CONTRACTS.marketplace);
+          
+          if (collectionMarketplace.toLowerCase() !== CONTRACTS.marketplace.toLowerCase()) {
+            console.warn('⚠️ Collection marketplace mismatch!');
+            console.warn('  Collection has:', collectionMarketplace);
+            console.warn('  Expected:', CONTRACTS.marketplace);
+            toast.dismiss("tx");
+            toast.error("This collection is configured for a different marketplace. Auto-approval won't work.");
+            return;
+          }
+          
+          console.log('✅ Collection marketplace matches - auto-approval should work');
+        } catch (mpCheckErr) {
+          console.log('🔍 Could not check collection marketplace setting:', mpCheckErr);
+        }
+        
+        // Check if marketplace is paused
+        try {
+          const isPaused = await publicClient.readContract({
+            address: CONTRACTS.marketplace,
+            abi: CONTRACTS.marketplaceAbi,
+            functionName: "paused",
+          });
+          
+          console.log('🔍 Marketplace paused status:', isPaused);
+          
+          if (isPaused) {
+            toast.dismiss("tx");
+            toast.error("Marketplace is currently paused");
+            return;
+          }
+        } catch (pauseErr) {
+          console.log('🔍 Could not check pause status (function may not exist)');
+        }
       } catch (marketplaceErr: any) {
-        console.log('🔍 Could not access marketplace contract:', marketplaceErr);
+        console.error('❌ Could not access marketplace contract:', marketplaceErr);
         toast.dismiss("tx");
         toast.error("Could not access marketplace contract");
         return;
       }
 
-      // PROPER SOLUTION: Check if NFT contract was created by allowed factories
-      toast.loading("Validating NFT contract origin…", { id: "tx" });
-      
-      let isFromAllowedFactory = false;
-      let factoryType = '';
-      
-      try {
-        console.log('🔍 Checking if NFT contract was created by allowed factories...');
-        
-        // Check Factory A (ERC1155 Factory) - Contract A
+      // Check if PackFactory is registered in marketplace
+      // This is important because the marketplace's internal _isCardify1155() checks if the collection
+      // comes from a registered factory. Even though PackFactory recognizes the collection,
+      // the marketplace won't accept it unless PackFactory is registered.
+      if (CONTRACTS.packFactory) {
         try {
-          // Get total collections count first
-          const totalCollections = await publicClient.readContract({
-            address: CONTRACTS.factoryERC1155,
-            abi: CONTRACTS.factoryERC1155Abi,
-            functionName: "totalCollections",
+          const isFactoryRegistered = await publicClient.readContract({
+            address: CONTRACTS.marketplace,
+            abi: CONTRACTS.marketplaceAbi,
+            functionName: 'isFactory1155',
+            args: [CONTRACTS.packFactory],
           });
-          
-          console.log('🔍 Factory A total collections:', totalCollections);
-          
-          // Fetch all collections by index
-          const factoryACollections: string[] = [];
-          const count = Number(totalCollections as bigint);
-          
-          for (let i = 0; i < count; i++) {
-            try {
-              const address = await publicClient.readContract({
-                address: CONTRACTS.factoryERC1155,
-                abi: CONTRACTS.factoryERC1155Abi,
-                functionName: "allCollections",
-                args: [BigInt(i)],
-              });
-              factoryACollections.push(address as string);
-            } catch (error) {
-              console.error(`Error fetching collection at index ${i}:`, error);
-            }
+          console.log('🔍 PackFactory registered in marketplace:', isFactoryRegistered);
+          if (!isFactoryRegistered) {
+            toast.dismiss("tx");
+            toast.error('PackFactory is not registered in the marketplace. The marketplace owner needs to call addFactory1155() to register it.');
+            return;
           }
-          
-          console.log('🔍 Factory A collections:', factoryACollections);
-          const isInFactoryA = factoryACollections.includes(nftAddr.toLowerCase()) || 
-                               factoryACollections.includes(nftAddr);
-          console.log('🔍 NFT contract is in Factory A collections:', isInFactoryA);
-          console.log('🔍 Factory A - lowercase match:', factoryACollections.includes(nftAddr.toLowerCase()));
-          console.log('🔍 Factory A - original case match:', factoryACollections.includes(nftAddr));
-          
-          if (isInFactoryA) {
-            isFromAllowedFactory = true;
-            factoryType = 'Factory A (ERC1155)';
-          }
-        } catch (factoryAErr) {
-          console.log('🔍 Could not check Factory A collections:', factoryAErr);
+        } catch (factoryCheckErr) {
+          console.log('🔍 Could not check factory registration:', factoryCheckErr);
+          // Continue anyway - the transaction simulation will catch the error
         }
-        
-        // Check Factory B (Single Factory) - Contract B
-        if (!isFromAllowedFactory) {
-          try {
-            // Get total collections count first
-            const totalCollections = await publicClient.readContract({
-              address: CONTRACTS.singleFactory,
-              abi: CONTRACTS.singleFactoryAbi,
-              functionName: "totalCollections",
-            });
-            
-            console.log('🔍 Factory B total collections:', totalCollections);
-            
-            // Fetch all collections by index
-            const factoryBCollections: string[] = [];
-            const count = Number(totalCollections as bigint);
-            
-            for (let i = 0; i < count; i++) {
-              try {
-                const address = await publicClient.readContract({
-                  address: CONTRACTS.singleFactory,
-                  abi: CONTRACTS.singleFactoryAbi,
-                  functionName: "allCollections",
-                  args: [BigInt(i)],
-                });
-                factoryBCollections.push(address as string);
-              } catch (error) {
-                console.error(`Error fetching collection at index ${i}:`, error);
-              }
-            }
-            
-            console.log('🔍 Factory B collection addresses:', factoryBCollections);
-            
-            const isInFactoryB = factoryBCollections.includes(nftAddr.toLowerCase()) || 
-                                 factoryBCollections.includes(nftAddr);
-            console.log('🔍 NFT contract is in Factory B collections:', isInFactoryB);
-            console.log('🔍 Checking both cases - lowercase match:', factoryBCollections.includes(nftAddr.toLowerCase()));
-            console.log('🔍 Checking both cases - original case match:', factoryBCollections.includes(nftAddr));
-            
-            if (isInFactoryB) {
-              isFromAllowedFactory = true;
-              factoryType = 'Factory B (Single)';
-            }
-          } catch (factoryBErr) {
-            console.log('🔍 Could not check Factory B collections:', factoryBErr);
-          }
-        }
-        
-        console.log('🔍 Final validation result:', {
-          isFromAllowedFactory,
-          factoryType,
-          nftContract: nftAddr
-        });
-        
-        // Additional debugging to help identify the issue
-        console.log('🔍 Debugging info:');
-        console.log('🔍 - NFT contract address:', nftAddr);
-        console.log('🔍 - NFT contract address (lowercase):', nftAddr.toLowerCase());
-        console.log('🔍 - Factory A address:', CONTRACTS.factoryERC1155);
-        console.log('🔍 - Factory B address:', CONTRACTS.singleFactory);
-        
-        if (!isFromAllowedFactory) {
-          toast.dismiss("tx");
-          toast.error("This NFT contract was not created by any allowed factory");
-          return;
-        } else {
-          console.log('✅ NFT contract validation passed - created by', factoryType);
-        }
-        
-      } catch (validationErr: any) {
-        console.log('🔍 Could not validate NFT contract origin:', validationErr);
-        toast.dismiss("tx");
-        toast.error("Could not validate NFT contract origin");
-        return;
       }
 
-      // Skip marketplace recognition check since we've already validated the factory
-      // The marketplace will do its own validation during the listing transaction
-      console.log('🔍 Skipping marketplace recognition check - already validated factory');
-
-      // Check if there are any other requirements or restrictions
-      toast.loading("Checking additional requirements…", { id: "tx" });
-      
-      try {
-        // Check if the marketplace has any other requirements
-        const feeDenominator = await publicClient.readContract({
-          address: CONTRACTS.marketplace,
-          abi: CONTRACTS.marketplaceAbi,
-          functionName: "FEE_DENOMINATOR",
-        });
-        
-        console.log('🔍 Marketplace fee denominator:', feeDenominator);
-        
-        // Check if there are any other restrictions
-        const factory721 = await publicClient.readContract({
-          address: CONTRACTS.marketplace,
-          abi: CONTRACTS.marketplaceAbi,
-          functionName: "factory721",
-        });
-        
-        console.log('🔍 Marketplace factory721:', factory721);
-        
-        // Note: canBuy721 function doesn't exist in the marketplace contract
-        // This check has been removed to prevent errors
-        
-      } catch (addReqErr: any) {
-        console.log('🔍 Could not check additional requirements:', addReqErr);
-      }
-
-      // Simulate the transaction first to catch errors early
+      // Simulate the transaction to catch errors early
       toast.loading("Validating transaction…", { id: "tx" });
       
-      // Use ERC1155 for simulation (only supported type)
-      console.log('🔍 Validating: Using ERC1155 token type');
-      console.log('🔍 Validating transaction with NFT contract address:', nftAddr);
+      console.log('🔍 Simulating transaction with parameters:', {
+        marketplace: CONTRACTS.marketplace,
+        nftAddr,
+        tokenId: listingId.toString(),
+        price: parseEther(price).toString(),
+        account: address
+      });
       
       try {
-        // Only ERC1155 is supported by this marketplace
         await publicClient.simulateContract({
           account: address,
           address: CONTRACTS.marketplace,
           abi: CONTRACTS.marketplaceAbi,
           functionName: "listItem1155",
-          args: [nftAddr, tokenId, parseEther(price)],
+          args: [nftAddr, listingId, parseEther(price)],
         });
+        console.log('✅ Transaction simulation successful');
       } catch (simErr: any) {
-        console.error('❌ Transaction failed:', simErr);
+        console.error('❌ Transaction simulation failed:', simErr);
         console.error('❌ Full error object:', simErr);
         toast.dismiss("tx");
         
-        let errorMessage = "Transaction failed";
+        let errorMessage = "Transaction validation failed";
+        
+        // Try to extract a meaningful error message
         try {
-          // Try to decode the error from different possible locations
-          let errorData = simErr?.data?.data || simErr?.cause?.data || simErr?.data;
-          console.log('🔍 Error data found:', errorData);
+          // Check for revert reason in various locations
+          const errorData = simErr?.data?.data || simErr?.cause?.data || simErr?.data;
+          const errorMsg = simErr?.shortMessage || simErr?.message || simErr?.cause?.message;
+          const revertReason = simErr?.cause?.reason || simErr?.reason;
+          
+          console.log('🔍 Error details:', {
+            errorData,
+            errorMsg,
+            revertReason,
+            cause: simErr?.cause
+          });
           
           if (errorData && errorData !== '0x') {
             console.log('🔍 Attempting to decode error data:', errorData);
-            const decoded = decodeErrorResult({
-              abi: CONTRACTS.marketplaceAbi,
-              data: errorData,
-            });
-            errorMessage = `Cannot list: ${decoded.errorName}`;
-            console.log('🔍 Decoded error:', decoded);
-          } else {
-            // Try to extract error message from the error object
-            const errorMsg = simErr?.shortMessage || simErr?.message || simErr?.cause?.message;
-            console.log('🔍 Error message found:', errorMsg);
-            if (errorMsg) {
-              errorMessage = `Transaction failed: ${errorMsg}`;
-            } else {
-              // Check if it's a specific revert reason
-              if (simErr?.cause?.reason) {
-                errorMessage = `Cannot list: ${simErr.cause.reason}`;
-              } else if (simErr?.reason) {
-                errorMessage = `Cannot list: ${simErr.reason}`;
+            try {
+              const decoded = decodeErrorResult({
+                abi: CONTRACTS.marketplaceAbi,
+                data: errorData,
+              });
+              errorMessage = `Cannot list: ${decoded.errorName || 'Unknown error'}`;
+              console.log('🔍 Decoded error:', decoded);
+            } catch (decodeErr) {
+              console.log('🔍 Could not decode error data');
+            }
+          }
+          
+          // If no decoded error, use the error message
+          if (errorMessage === "Transaction validation failed") {
+            if (revertReason) {
+              errorMessage = `Cannot list: ${revertReason}`;
+            } else if (errorMsg) {
+              // Extract the most relevant part of the error message
+              if (errorMsg.includes('reverted')) {
+                errorMessage = "Transaction would revert. Possible reasons: NFT already listed, not approved, or token doesn't exist";
+              } else {
+                errorMessage = `Validation failed: ${errorMsg.substring(0, 100)}`;
               }
             }
           }
-        } catch (decodeErr) {
-          console.error('Failed to decode transaction error:', decodeErr);
-          console.error('Original error:', simErr);
+        } catch (parseErr) {
+          console.error('Failed to parse error:', parseErr);
         }
         
         toast.error(errorMessage);
+        
+        // Provide helpful debugging info
+        console.log('🔍 Debugging info:');
+        console.log('  - NFT Contract:', nftAddr);
+        console.log('  - Token ID:', listingId.toString());
+        console.log('  - Price:', parseEther(price).toString());
+        console.log('  - Your Address:', address);
+        console.log('  - Marketplace:', CONTRACTS.marketplace);
+        console.log('  - Chain ID:', chainId);
+        
         return;
       }
 
       toast.loading("Listing NFT…", { id: "tx" });
       
-      // Debug the parameters
-      console.log('🔍 Listing parameters:', {
-        nftContract: nftAddr,
-        tokenId,
-        price: parseEther(price),
-        amount: 1n,
-        marketplace: CONTRACTS.marketplace,
-        factoryType: 'Factory B (Single)'
-      });
-      
-      // Use ERC1155 for listing (only supported type)
-      console.log('🔍 Listing: Using ERC1155 token type');
-      console.log('🔍 Listing: Using validated NFT contract address:', nftAddr);
-      
-      let hash;
-      // Only ERC1155 is supported by this marketplace
       console.log('🔍 Creating ERC1155 listing with validated contract');
       
+      let hash;
       try {
         hash = await writeContractAsync({
           address: CONTRACTS.marketplace,
           abi: CONTRACTS.marketplaceAbi,
           functionName: "listItem1155",
-          args: [nftAddr, tokenId, parseEther(price)],
+          args: [nftAddr, listingId, parseEther(price)],
         });
         console.log('✅ ERC1155 listing transaction submitted:', hash);
       } catch (listingError: any) {
         console.error('❌ ERC1155 listing failed:', listingError);
-        throw new Error(`Failed to create ERC1155 listing: ${listingError?.message || 'Unknown error'}`);
+        toast.dismiss("tx");
+        toast.error(`Failed to create listing: ${listingError?.message || 'Unknown error'}`);
+        return;
       }
 
       const receipt = await publicClient.waitForTransactionReceipt({ hash });
@@ -975,7 +687,6 @@ export default function ListingPage() {
       toast.dismiss("tx");
       console.error('❌ Listing error:', err);
       
-      // Try to decode the error for better user feedback
       let errorMessage = err?.shortMessage || err.message || "Transaction failed";
       
       try {
@@ -1009,8 +720,6 @@ export default function ListingPage() {
   /* ------------- page ------------- */
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
-      {/* ⭐ background gradients omitted for brevity ⭐ */}
-
       <div className="relative z-10 max-w-2xl mx-auto p-6">
         <h1 className="text-5xl font-black text-center mb-10 bg-gradient-to-r
                        from-purple-500 via-pink-500 to-blue-500 bg-clip-text
