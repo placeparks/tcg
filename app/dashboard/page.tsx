@@ -7,7 +7,6 @@ import {
   useReadContract,
   usePublicClient,
   useWatchContractEvent,
-  useWriteContract,
 } from "wagmi";
 
 import FullPageLoader     from "@/components/FullPageLoader";
@@ -17,22 +16,16 @@ import { getNFTsForOwner, AlchemyNFT } from "@/lib/alchemy";
 import PackOpeningAnimation from "@/components/PackOpeningAnimation";
 import DashboardPackCard from "@/components/DashboardPackCard";
 
-/* ------------------------------------------------------------------ */
-/* constants + helpers                                                */
-const CHAIN_ID = 84532;                          // Base-Sepolia
+const CHAIN_ID = 84532; // Base-Sepolia
 
-/* ------------------------------------------------------------------ */
 export default function Dashboard() {
-  /* wallet ---------------------------------------------------------------- */
   const { ready }     = usePrivy();
   const { address }   = useAccount();
   const publicClient  = usePublicClient({ chainId: CHAIN_ID });
 
-  /* ui state -------------------------------------------------------------- */
   const [busy,  setBusy ] = useState(false);
   const [show,  setShow ] = useState(false);
 
-  /* data ------------------------------------------------------------------ */
   const [allCollections, setAllCollections] = useState<string[]>([]);
   const [alchemyNfts,    setAlchemyNfts   ] = useState<AlchemyNFT[]>([]);
   const [packs, setPacks] = useState<Array<{
@@ -43,7 +36,7 @@ export default function Dashboard() {
     packImageUri?: string;
     nftImageUris?: string[];
     allTokenUris?: string[];
-    packTokenId: bigint; // The token ID for the pack (5 or 0)
+    packTokenId: bigint;
     uniqueId?: string;
   }>>([]);
   const [selectedPack, setSelectedPack] = useState<{
@@ -58,11 +51,9 @@ export default function Dashboard() {
   } | null>(null);
   const [showPackView, setShowPackView] = useState(false);
 
-  /* totals from factories ------------------------------------------------- */
   const {
     data: singleTotal,
     isPending: singleLoading,
-    error: singleErr,
   } = useReadContract({
     address:      CONTRACTS.singleFactory,
     abi:          CONTRACTS.singleFactoryAbi,
@@ -73,7 +64,6 @@ export default function Dashboard() {
   const {
     data: erc1155Total,
     isPending: erc1155Loading,
-    error: erc1155Err,
   } = useReadContract({
     address:      CONTRACTS.factoryERC1155,
     abi:          CONTRACTS.factoryERC1155Abi,
@@ -81,7 +71,7 @@ export default function Dashboard() {
     query:        { enabled: !!address },
   });
 
-  // Fetch pack collections from database
+  // Load packs from database and check balances
   const loadPacks = useCallback(async () => {
     if (!address || !publicClient) return;
     
@@ -92,81 +82,57 @@ export default function Dashboard() {
       const dbPacks = await response.json();
       if (!Array.isArray(dbPacks)) return;
       
-        // Check balance for each pack
-        // Unopened packs are token ID 0 (token ID 5 is only for metadata/display)
-        // When opened, token ID 0 is burned and 5 NFTs (token IDs 0-4) are minted
-        console.log(`🔍 Checking pack balances for wallet: ${address}`);
-        const packBalances = await Promise.all(
-          dbPacks.map(async (dbPack: any) => {
-            try {
-              // Check token ID 0 first (unopened packs are token ID 0)
-              let balance = await publicClient.readContract({
-                address: dbPack.collection_address as `0x${string}`,
-                abi: CONTRACTS.packCollectionAbi,
-                functionName: 'balanceOf',
-                args: [address as `0x${string}`, 0n],
-              }).catch(() => 0n) as bigint;
+      console.log(`🔍 Checking pack balances for wallet: ${address}`);
+      const packBalances = await Promise.all(
+        dbPacks.map(async (dbPack: any) => {
+          try {
+            // Check token ID 0 (unopened pack token)
+            const balance = await publicClient.readContract({
+              address: dbPack.collection_address as `0x${string}`,
+              abi: CONTRACTS.packCollectionAbi,
+              functionName: 'balanceOf',
+              args: [address as `0x${string}`, 0n],
+            }).catch(() => 0n) as bigint;
+            
+            console.log(`  📦 Pack "${dbPack.name}": balance = ${balance.toString()}`);
+            
+            // Only return pack data if balance > 0
+            if (balance > 0n) {
+              let nftImageUris: string[] = [];
+              let allTokenUris: string[] = [];
               
-              let packTokenId = 0n; // Default to legacy token ID 0
-              
-              console.log(`  📦 Pack "${dbPack.name}" (${dbPack.collection_address}):`);
-              console.log(`     Token ID 0 balance: ${balance.toString()}`);
-              
-              // Also check token ID 5 for backwards compatibility (some old packs might be at ID 5)
-              if (balance === 0n) {
-                const balance5 = await publicClient.readContract({
-                  address: dbPack.collection_address as `0x${string}`,
-                  abi: CONTRACTS.packCollectionAbi,
-                  functionName: 'balanceOf',
-                  args: [address as `0x${string}`, 5n],
-                }).catch(() => 0n) as bigint;
-                if (balance5 > 0n) {
-                  balance = balance5;
-                  packTokenId = 5n; // Most packs mint to token ID 5
-                }
-                console.log(`     Token ID 5 balance: ${balance5.toString()}`);
+              try {
+                nftImageUris = JSON.parse(dbPack.nft_image_uris || '[]') as string[];
+              } catch (e) {
+                console.warn('Failed to parse nft_image_uris');
               }
               
-              console.log(`     ✅ Final: ${balance.toString()} unopened pack(s) at token ID ${packTokenId.toString()}`);
-              
-              if (balance > 0n) {
-                // Parse JSON strings from database
-                let nftImageUris: string[] = [];
-                let allTokenUris: string[] = [];
-                
-                try {
-                  nftImageUris = JSON.parse(dbPack.nft_image_uris || '[]') as string[];
-                } catch (e) {
-                  console.warn('Failed to parse nft_image_uris');
-                }
-                
-                try {
-                  allTokenUris = JSON.parse(dbPack.all_token_uris || '[]') as string[];
-                } catch (e) {
-                  console.warn('Failed to parse all_token_uris');
-                }
-                
-                return {
-                  packAddress: dbPack.collection_address,
-                  name: dbPack.name || 'Unnamed Pack',
-                  symbol: dbPack.symbol || 'PACK',
-                  balance: balance,
-                  packImageUri: dbPack.pack_image_uri,
-                  nftImageUris,
-                  allTokenUris,
-                  packTokenId,
-                };
+              try {
+                allTokenUris = JSON.parse(dbPack.all_token_uris || '[]') as string[];
+              } catch (e) {
+                console.warn('Failed to parse all_token_uris');
               }
-              return null;
-            } catch (error) {
-              console.error(`Error checking balance for pack ${dbPack.collection_address}:`, error);
-              return null;
+              
+              return {
+                packAddress: dbPack.collection_address,
+                name: dbPack.name || 'Unnamed Pack',
+                symbol: dbPack.symbol || 'PACK',
+                balance: balance,
+                packImageUri: dbPack.pack_image_uri,
+                nftImageUris,
+                allTokenUris,
+                packTokenId: 0n, // Pack is always token ID 0
+              };
             }
-          })
-        );
-      
+            return null;
+          } catch (error) {
+            console.error(`Error checking balance for pack ${dbPack.collection_address}:`, error);
+            return null;
+          }
+        })
+      );
+    
       // Expand packs to show individual instances
-      // If user owns 3 packs, create 3 separate pack objects
       const expandedPacks: Array<typeof packBalances[0] & { uniqueId: string }> = [];
       let totalUnopenedPacks = 0;
       
@@ -174,21 +140,16 @@ export default function Dashboard() {
         if (pack) {
           const count = Number(pack.balance);
           totalUnopenedPacks += count;
-          console.log(`📦 Expanding pack "${pack.name}": balance = ${count}, creating ${count} pack instance(s)`);
           for (let i = 0; i < count; i++) {
             expandedPacks.push({
               ...pack,
-              // Add a unique ID for each instance
-              uniqueId: `${pack.packAddress}-${pack.packTokenId}-${i}`,
+              uniqueId: `${pack.packAddress}-0-${i}`,
             } as any);
           }
         }
       });
       
-      console.log(`\n📊 SUMMARY:`);
-      console.log(`   Total unopened packs in wallet: ${totalUnopenedPacks}`);
-      console.log(`   Total pack cards to display: ${expandedPacks.length}`);
-      console.log(`\n`);
+      console.log(`📊 Total unopened packs: ${totalUnopenedPacks}, displaying ${expandedPacks.length} cards\n`);
       
       setPacks(expandedPacks.filter(Boolean) as any);
     } catch (error) {
@@ -200,8 +161,7 @@ export default function Dashboard() {
     loadPacks(); 
   }, [loadPacks]);
 
-  /* ------------------------------------------------------------------ */
-  /* 1/3 – load every collection address once totals are known          */
+  // Load collection addresses
   useEffect(() => {
     if (!publicClient || (!singleTotal && !erc1155Total)) return;
 
@@ -234,7 +194,7 @@ export default function Dashboard() {
         }
       }
 
-      // Also add pack collection addresses
+      // Add pack collection addresses
       try {
         const response = await fetch('/api/packs/active');
         if (response.ok) {
@@ -248,15 +208,14 @@ export default function Dashboard() {
           }
         }
       } catch (error) {
-        console.error('Error fetching pack collections for NFT loading:', error);
+        console.error('Error fetching pack collections:', error);
       }
 
       setAllCollections(list);
     })();
   }, [singleTotal, erc1155Total, publicClient]);
 
-  /* ------------------------------------------------------------------ */
-  /* 2/3 – core loader                                                  */
+  // Load NFTs
   const loadNfts = useCallback(async () => {
     if (!ready || !address || !allCollections.length) return;
 
@@ -264,7 +223,7 @@ export default function Dashboard() {
     setShow(false);
 
     try {
-      // Get pack collection addresses to filter out pack tokens
+      // Get pack collection addresses
       const packCollectionAddresses = new Set<string>();
       try {
         const response = await fetch('/api/packs/active');
@@ -279,36 +238,18 @@ export default function Dashboard() {
           }
         }
       } catch (error) {
-        console.error('Error fetching pack collections for filtering:', error);
+        console.error('Error fetching pack collections:', error);
       }
 
       const raw = await getNFTsForOwner(address, allCollections);
 
-      // Fetch pack token IDs from contracts for each pack collection
+      // Pack collections: Token ID 0 is the pack, Token IDs 1-5 are the NFT cards
       const packTokenIdMap = new Map<string, { packTokenId: bigint; cardTokenIds: bigint[] }>();
-      if (publicClient) {
-        for (const packAddress of packCollectionAddresses) {
-          try {
-            const [packTokenId, cardTokenIds] = await Promise.all([
-              publicClient.readContract({
-                address: packAddress as `0x${string}`,
-                abi: CONTRACTS.packCollectionAbi,
-                functionName: 'packTokenId',
-              }).catch(() => 0n) as Promise<bigint>,
-              publicClient.readContract({
-                address: packAddress as `0x${string}`,
-                abi: CONTRACTS.packCollectionAbi,
-                functionName: 'cardTokenIds',
-              }).catch(() => [1n, 2n, 3n, 4n, 5n]) as Promise<bigint[]>,
-            ]);
-            packTokenIdMap.set(packAddress.toLowerCase(), { packTokenId, cardTokenIds });
-            console.log(`📦 Pack ${packAddress}: packTokenId=${packTokenId.toString()}, cardTokenIds=[${cardTokenIds.map(id => id.toString()).join(', ')}]`);
-          } catch (error) {
-            console.error(`Error fetching token IDs for pack ${packAddress}:`, error);
-            // Fallback to default values
-            packTokenIdMap.set(packAddress.toLowerCase(), { packTokenId: 0n, cardTokenIds: [1n, 2n, 3n, 4n, 5n] });
-          }
-        }
+      for (const packAddress of packCollectionAddresses) {
+        packTokenIdMap.set(packAddress.toLowerCase(), { 
+          packTokenId: 0n, 
+          cardTokenIds: [1n, 2n, 3n, 4n, 5n] 
+        });
       }
 
       const factories = new Set(allCollections.map(c => c.toLowerCase()));
@@ -316,32 +257,26 @@ export default function Dashboard() {
         const isFromFactory = factories.has(nft.contract.address.toLowerCase());
         if (!isFromFactory) return false;
         
-        // If NFT is from a pack collection, use contract to determine valid token IDs
+        // If NFT is from a pack collection, filter out the pack token (ID 0)
         const isFromPackCollection = packCollectionAddresses.has(nft.contract.address.toLowerCase());
         if (isFromPackCollection) {
           const tokenId = BigInt(nft.tokenId);
           const tokenIdInfo = packTokenIdMap.get(nft.contract.address.toLowerCase());
           
-          if (!tokenIdInfo) {
-            // If we couldn't fetch token ID info, filter out token ID 0 (default pack token)
-            return tokenId !== 0n;
-          }
+          if (!tokenIdInfo) return tokenId !== 0n;
           
-          // Filter out the pack token ID, only show card token IDs
-          if (tokenId === tokenIdInfo.packTokenId) {
-            return false; // This is the pack token, not an NFT
-          }
+          // Filter out the pack token ID (0), only show card token IDs (1-5)
+          if (tokenId === tokenIdInfo.packTokenId) return false;
           
-          // Only show if it's one of the valid card token IDs
           return tokenIdInfo.cardTokenIds.includes(tokenId);
         }
         
         return true;
       });
 
-      // Build a map of pack collection addresses to their token URIs from database
+      // Build URI map from database
       const packUriMap = new Map<string, Map<number, { uri: string; imageUri?: string }>>();
-      if (packCollectionAddresses.size > 0 && publicClient) {
+      if (packCollectionAddresses.size > 0) {
         try {
           const response = await fetch('/api/packs/active');
           if (response.ok) {
@@ -358,21 +293,15 @@ export default function Dashboard() {
                   
                   try {
                     allTokenUris = JSON.parse(dbPack.all_token_uris || '[]') as string[];
-                  } catch (e) {
-                    console.warn(`Failed to parse all_token_uris for ${collectionLower}`);
-                  }
-                  
-                  try {
                     nftImageUris = JSON.parse(dbPack.nft_image_uris || '[]') as string[];
                   } catch (e) {
-                    console.warn(`Failed to parse nft_image_uris for ${collectionLower}`);
+                    console.warn(`Failed to parse URIs for ${collectionLower}`);
                   }
                   
-                  // Map token IDs 1-5 to indices 0-4 in allTokenUris
-                  // Token ID 1 -> index 0, Token ID 2 -> index 1, etc.
+                  // Map token IDs 1-5 to array indices 0-4
                   const tokenIdMap = new Map<number, { uri: string; imageUri?: string }>();
                   for (let tokenId = 1; tokenId <= 5; tokenId++) {
-                    const uriIndex = tokenId - 1; // Token ID 1 maps to index 0
+                    const uriIndex = tokenId - 1;
                     if (uriIndex < allTokenUris.length && allTokenUris[uriIndex]) {
                       tokenIdMap.set(tokenId, {
                         uri: allTokenUris[uriIndex],
@@ -383,7 +312,6 @@ export default function Dashboard() {
                   
                   if (tokenIdMap.size > 0) {
                     packUriMap.set(collectionLower, tokenIdMap);
-                    console.log(`📦 Mapped URIs for pack ${collectionLower}:`, Array.from(tokenIdMap.entries()).map(([id, data]) => `${id}->${data.uri}`));
                   }
                 } catch (error) {
                   console.error(`Error processing pack ${collectionLower}:`, error);
@@ -396,14 +324,11 @@ export default function Dashboard() {
         }
       }
 
-      // Process NFTs and override metadata for pack collection NFTs
+      // Process NFTs and override metadata for pack NFTs
       const expanded: AlchemyNFT[] = [];
       const processedNfts = await Promise.all(kept.map(async (nft) => {
-        const count = nft.tokenType === "ERC1155"
-          ? Number((nft as any).balance ?? 1)
-          : 1;
+        const count = nft.tokenType === "ERC1155" ? Number((nft as any).balance ?? 1) : 1;
         
-        // Override token URI and metadata if this is a pack collection NFT
         let nftToAdd = { ...nft };
         const collectionLower = nft.contract.address.toLowerCase();
         const tokenIdNum = Number(nft.tokenId);
@@ -415,12 +340,10 @@ export default function Dashboard() {
             const uriData = uriMap.get(tokenIdNum);
             if (uriData && uriData.uri) {
               try {
-                // Fetch metadata from the correct URI
                 const metadataResponse = await fetch(`/api/ipfs-metadata?src=${encodeURIComponent(uriData.uri)}&tokenId=${tokenIdNum}`);
                 if (metadataResponse.ok) {
                   const metadata = await metadataResponse.json();
                   
-                  // Override the NFT's metadata
                   nftToAdd = {
                     ...nftToAdd,
                     name: metadata.name || nftToAdd.name || `NFT #${tokenIdNum}`,
@@ -428,15 +351,15 @@ export default function Dashboard() {
                       ...nftToAdd.raw,
                       metadata: {
                         ...nftToAdd.raw?.metadata,
-                        name: metadata.name || nftToAdd.raw?.metadata?.name,
-                        description: metadata.description || nftToAdd.raw?.metadata?.description,
-                        image: metadata.imageUrl || uriData.imageUri || nftToAdd.raw?.metadata?.image,
-                        attributes: metadata.attributes || nftToAdd.raw?.metadata?.attributes || []
+                        name: metadata.name,
+                        description: metadata.description,
+                        image: metadata.imageUrl || uriData.imageUri,
+                        attributes: metadata.attributes || []
                       },
                       tokenUri: {
                         raw: uriData.uri,
                         gateway: uriData.uri.startsWith('ipfs://') 
-                          ? `https://gateway.pinata.cloud/ipfs/${uriData.uri.replace('ipfs://', '').replace(/^\/+/, '')}`
+                          ? `https://gateway.pinata.cloud/ipfs/${uriData.uri.replace('ipfs://', '')}`
                           : uriData.uri
                       }
                     },
@@ -446,11 +369,6 @@ export default function Dashboard() {
                       originalUrl: metadata.imageUrl || uriData.imageUri
                     }
                   };
-                  
-                  console.log(`✅ Overrode metadata for token ID ${tokenIdNum} in ${collectionLower}:`, {
-                    name: nftToAdd.name,
-                    image: nftToAdd.image?.cachedUrl
-                  });
                 }
               } catch (error) {
                 console.warn(`Error fetching metadata for token ID ${tokenIdNum}:`, error);
@@ -459,7 +377,6 @@ export default function Dashboard() {
           }
         }
         
-        // Expand based on balance
         const expandedForThisNft: AlchemyNFT[] = [];
         for (let i = 0; i < count; i++) {
           expandedForThisNft.push({ 
@@ -470,70 +387,157 @@ export default function Dashboard() {
         return expandedForThisNft;
       }));
       
-      // Flatten the array of arrays
       expanded.push(...processedNfts.flat());
-      
       setAlchemyNfts(expanded);
     } catch (err) {
       console.error("NFT fetch failed:", err);
       setAlchemyNfts([]);
     } finally {
       setBusy(false);
-      setTimeout(() => setShow(true), 200);   // anti-flicker
+      setTimeout(() => setShow(true), 200);
     }
   }, [ready, address, allCollections, publicClient]);
 
   useEffect(() => { 
     loadNfts();
-    loadPacks(); // Also load packs when address changes
+    loadPacks();
   }, [loadNfts, loadPacks]);
 
-  // Handle opening a pack - shows animation with NFTs
+  // Handle opening a pack
   const handleOpenPack = async (packAddress: string, packName: string) => {
-    if (!publicClient) return;
+    if (!publicClient || !address) return;
     
     try {
-      // Find the pack data
       const pack = packs.find(p => p.packAddress === packAddress);
       if (!pack) return;
 
-      // Use token URIs from database if available, otherwise fetch from blockchain
-      let tokenURIs: (string | null)[] = [];
+      // Get packSize and cardCount from contract to know how many cards to expect
+      const [cardCount, packSize] = await Promise.all([
+        publicClient.readContract({
+          address: packAddress as `0x${string}`,
+          abi: CONTRACTS.packCollectionAbi,
+          functionName: 'cardCount',
+        }).catch(() => 0n) as Promise<bigint>,
+        publicClient.readContract({
+          address: packAddress as `0x${string}`,
+          abi: CONTRACTS.packCollectionAbi,
+          functionName: 'packSize',
+        }).catch(() => 0n) as Promise<bigint>,
+      ]);
+
+      console.log(`📦 Pack info: cardCount=${cardCount}, packSize=${packSize}`);
+
+      // Validate cardCount
+      if (cardCount === 0n) {
+        console.error('Invalid cardCount: 0. Contract may not be initialized.');
+        setSelectedPack({
+          packAddress: packAddress,
+          name: packName,
+          nftMetadata: []
+        });
+        setShowPackView(true);
+        return;
+      }
+
+      // Wait a moment for the transaction to be mined and state to update
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Check balance for all possible card token IDs (1 to cardCount)
+      // to find which random cards were actually minted
+      const cardCountNum = Number(cardCount);
+      const allCardIds = Array.from({ length: cardCountNum }, (_, i) => BigInt(i + 1));
       
-      if (pack.allTokenUris && pack.allTokenUris.length >= 5) {
-        // Use database token URIs (first 5 are the NFTs)
-        tokenURIs = pack.allTokenUris.slice(0, 5);
-      } else {
-        // Fallback: Fetch token URIs from blockchain
-        // NFT token IDs are 1-5, not 0-4
-        tokenURIs = await Promise.all(
-          Array.from({ length: 5 }, (_, i) =>
+      // Limit batch size to avoid RPC timeouts (max 100 at a time)
+      const BATCH_SIZE = 100;
+      const receivedCardIds: bigint[] = [];
+      
+      for (let i = 0; i < allCardIds.length; i += BATCH_SIZE) {
+        const batchIds = allCardIds.slice(i, i + BATCH_SIZE);
+        const accounts = Array(batchIds.length).fill(address);
+        
+        try {
+          const balances = await Promise.race([
             publicClient.readContract({
               address: packAddress as `0x${string}`,
               abi: CONTRACTS.packCollectionAbi,
-              functionName: 'uri',
-              args: [BigInt(i + 1)], // Token IDs are 1-5, not 0-4
-            }).catch(() => null)
-          )
-        );
+              functionName: 'balanceOfBatch',
+              args: [accounts as `0x${string}`[], batchIds],
+            }),
+            new Promise<bigint[]>((_, reject) => 
+              setTimeout(() => reject(new Error('Balance query timeout')), 15000)
+            )
+          ]) as bigint[];
+
+          // Find which card token IDs the user actually received (balance > 0)
+          for (let j = 0; j < batchIds.length; j++) {
+            if (balances[j] > 0n) {
+              receivedCardIds.push(batchIds[j]);
+            }
+          }
+        } catch (error) {
+          console.warn(`Error checking balances for batch ${i}-${i + BATCH_SIZE}:`, error);
+          // Continue with next batch even if one fails
+        }
       }
 
-      // Fetch metadata for each NFT
+      console.log(`🎴 Received ${receivedCardIds.length} cards:`, receivedCardIds.map(id => id.toString()));
+
+      // If we didn't find any cards, try checking again after a longer delay
+      if (receivedCardIds.length === 0) {
+        console.warn('No cards found, waiting longer and retrying...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // Retry with smaller batches
+        receivedCardIds.length = 0;
+        for (let i = 0; i < allCardIds.length; i += BATCH_SIZE) {
+          const batchIds = allCardIds.slice(i, i + BATCH_SIZE);
+          const accounts = Array(batchIds.length).fill(address);
+          
+          try {
+            const retryBalances = await Promise.race([
+              publicClient.readContract({
+                address: packAddress as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: 'balanceOfBatch',
+                args: [accounts as `0x${string}`[], batchIds],
+              }),
+              new Promise<bigint[]>((_, reject) => 
+                setTimeout(() => reject(new Error('Balance query timeout')), 15000)
+              )
+            ]) as bigint[];
+
+            for (let j = 0; j < batchIds.length; j++) {
+              if (retryBalances[j] > 0n) {
+                receivedCardIds.push(batchIds[j]);
+              }
+            }
+          } catch (error) {
+            console.warn(`Error retrying balances for batch ${i}-${i + BATCH_SIZE}:`, error);
+          }
+        }
+      }
+
+      // Get URIs for the cards that were actually received
+      const tokenURIs = await Promise.all(
+        receivedCardIds.map((tokenId) =>
+          publicClient.readContract({
+            address: packAddress as `0x${string}`,
+            abi: CONTRACTS.packCollectionAbi,
+            functionName: 'uri',
+            args: [tokenId],
+          }).catch(() => null)
+        )
+      );
+
+      // Fetch metadata for each received card
       const nftMetadataPromises = tokenURIs.map(async (tokenUri, index) => {
-        const imageUri = pack.nftImageUris?.[index];
+        const tokenId = Number(receivedCardIds[index]);
         
         if (!tokenUri || tokenUri === 'ipfs://...' || tokenUri.includes('...')) {
-          // Use image from database if available
-          const fallbackImage = imageUri 
-            ? (imageUri.startsWith('ipfs://') 
-                ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
-                : imageUri)
-            : '/cardifyN.png';
-          
           return {
-            name: `NFT ${index + 1}`,
+            name: `Card #${tokenId}`,
             description: '',
-            image: fallbackImage,
+            image: '/cardifyN.png',
             attributes: []
           };
         }
@@ -541,49 +545,30 @@ export default function Dashboard() {
         try {
           let httpUrl = tokenUri as string;
           if (httpUrl.startsWith('ipfs://')) {
-            const ipfsHash = httpUrl.replace('ipfs://', '').replace(/^\/+/, '');
-            httpUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+            httpUrl = `https://gateway.pinata.cloud/ipfs/${httpUrl.replace('ipfs://', '')}`;
           }
 
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-          try {
-            const response = await fetch(httpUrl, { 
-              signal: controller.signal,
-              headers: { 'Accept': 'application/json' }
-            });
-            clearTimeout(timeoutId);
+          const response = await fetch(httpUrl, { 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+          });
+          clearTimeout(timeoutId);
 
-            if (response.ok) {
-              const metadata = await response.json();
-              // Ensure image is set, use imageUri from database as fallback
-              if (!metadata.image && imageUri) {
-                metadata.image = imageUri.startsWith('ipfs://') 
-                  ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
-                  : imageUri;
-              }
-              return metadata;
-            }
-          } catch (fetchError) {
-            clearTimeout(timeoutId);
-            throw fetchError;
+          if (response.ok) {
+            const metadata = await response.json();
+            return metadata;
           }
         } catch (error) {
-          console.warn(`Error fetching metadata for NFT ${index}:`, error);
+          console.warn(`Error fetching metadata for token ID ${tokenId}:`, error);
         }
 
-        // Fallback: use image from database if available
-        const fallbackImage = imageUri 
-          ? (imageUri.startsWith('ipfs://') 
-              ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
-              : imageUri)
-          : '/cardifyN.png';
-
         return {
-          name: `NFT ${index + 1}`,
+          name: `Card #${tokenId}`,
           description: '',
-          image: fallbackImage,
+          image: '/cardifyN.png',
           attributes: []
         };
       });
@@ -597,10 +582,7 @@ export default function Dashboard() {
       });
       setShowPackView(true);
       
-      // Refresh packs and NFTs after showing animation
-      // Wait a bit for blockchain state to update
       setTimeout(() => {
-        console.log('🔄 Refreshing packs and NFTs after pack opening...');
         loadPacks();
         loadNfts();
       }, 3000);
@@ -609,7 +591,7 @@ export default function Dashboard() {
     }
   };
 
-  // Fetch pack NFT metadata when a pack is clicked (for viewing)
+  // Handle viewing pack contents
   const handlePackClick = async (pack: { 
     packAddress: string; 
     name: string;
@@ -619,41 +601,44 @@ export default function Dashboard() {
     if (!publicClient) return;
     
     try {
-      // Use token URIs from database if available, otherwise fetch from blockchain
+      const cardTokenIds = [1n, 2n, 3n, 4n, 5n];
       let tokenURIs: (string | null)[] = [];
       
-      if (pack.allTokenUris && pack.allTokenUris.length >= 5) {
-        // Use database token URIs (first 5 are the NFTs)
+      if (pack.allTokenUris && pack.allTokenUris.length === 6) {
+        // Database has: [nft1, nft2, nft3, nft4, nft5, packCover]
+        // We need indices 0-4 (first 5 items)
+        tokenURIs = pack.allTokenUris.slice(0, 5);
+      } else if (pack.allTokenUris && pack.allTokenUris.length >= 5) {
         tokenURIs = pack.allTokenUris.slice(0, 5);
       } else {
-        // Fallback: Fetch token URIs from blockchain
-        // NFT token IDs are 1-5, not 0-4
         tokenURIs = await Promise.all(
-          Array.from({ length: 5 }, (_, i) =>
+          cardTokenIds.map((tokenId) =>
             publicClient.readContract({
               address: pack.packAddress as `0x${string}`,
               abi: CONTRACTS.packCollectionAbi,
               functionName: 'uri',
-              args: [BigInt(i + 1)], // Token IDs are 1-5, not 0-4
+              args: [tokenId],
             }).catch(() => null)
           )
         );
       }
 
-      // Fetch metadata for each NFT
       const nftMetadataPromises = tokenURIs.map(async (tokenUri, index) => {
-        const imageUri = pack.nftImageUris?.[index];
+        const tokenId = Number(cardTokenIds[index]); // 1, 2, 3, 4, 5
+        // nftImageUris array: [img1, img2, img3, img4, img5]
+        // Use index directly (0-4) since arrays are parallel
+        const imageUriIndex = index;
+        const imageUri = pack.nftImageUris?.[imageUriIndex];
         
         if (!tokenUri || tokenUri === 'ipfs://...' || tokenUri.includes('...')) {
-          // Use image from database if available
           const fallbackImage = imageUri 
             ? (imageUri.startsWith('ipfs://') 
-                ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
+                ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '')}`
                 : imageUri)
             : '/cardifyN.png';
           
           return {
-            name: `NFT ${index + 1}`,
+            name: `NFT ${tokenId}`,
             description: '',
             image: fallbackImage,
             attributes: []
@@ -663,47 +648,39 @@ export default function Dashboard() {
         try {
           let httpUrl = tokenUri as string;
           if (httpUrl.startsWith('ipfs://')) {
-            const ipfsHash = httpUrl.replace('ipfs://', '').replace(/^\/+/, '');
-            httpUrl = `https://gateway.pinata.cloud/ipfs/${ipfsHash}`;
+            httpUrl = `https://gateway.pinata.cloud/ipfs/${httpUrl.replace('ipfs://', '')}`;
           }
 
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-          try {
-            const response = await fetch(httpUrl, { 
-              signal: controller.signal,
-              headers: { 'Accept': 'application/json' }
-            });
-            clearTimeout(timeoutId);
+          const response = await fetch(httpUrl, { 
+            signal: controller.signal,
+            headers: { 'Accept': 'application/json' }
+          });
+          clearTimeout(timeoutId);
 
-            if (response.ok) {
-              const metadata = await response.json();
-              // Ensure image is set, use imageUri from database as fallback
-              if (!metadata.image && imageUri) {
-                metadata.image = imageUri.startsWith('ipfs://') 
-                  ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
-                  : imageUri;
-              }
-              return metadata;
+          if (response.ok) {
+            const metadata = await response.json();
+            if (!metadata.image && imageUri) {
+              metadata.image = imageUri.startsWith('ipfs://') 
+                ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '')}`
+                : imageUri;
             }
-          } catch (fetchError) {
-            clearTimeout(timeoutId);
-            throw fetchError;
+            return metadata;
           }
         } catch (error) {
-          console.warn(`Error fetching metadata for NFT ${index}:`, error);
+          console.warn(`Error fetching metadata for token ID ${tokenId}:`, error);
         }
 
-        // Fallback: use image from database if available
         const fallbackImage = imageUri 
           ? (imageUri.startsWith('ipfs://') 
-              ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '').replace(/^\/+/, '')}`
+              ? `https://gateway.pinata.cloud/ipfs/${imageUri.replace('ipfs://', '')}`
               : imageUri)
           : '/cardifyN.png';
 
         return {
-          name: `NFT ${index + 1}`,
+          name: `NFT ${tokenId}`,
           description: '',
           image: fallbackImage,
           attributes: []
@@ -723,8 +700,7 @@ export default function Dashboard() {
     }
   };
 
-  /* ------------------------------------------------------------------ */
-  /* 3/3 – refresh on Sold / Cancelled events                           */
+  // Event watchers
   useWatchContractEvent({
     address: CONTRACTS.marketplace,
     abi:     CONTRACTS.marketplaceAbi,
@@ -753,51 +729,18 @@ export default function Dashboard() {
     },
   });
 
-  // Watch for pack mint events - refresh packs when new packs are minted
-  // Note: We watch all pack collections for Transfer events to token ID 5
-  useEffect(() => {
-    if (!address || !publicClient || !CONTRACTS.packFactory) return;
-    
-    // Fetch pack addresses and set up watchers
-    const setupPackWatchers = async () => {
-      try {
-        const response = await fetch('/api/packs/active');
-        if (!response.ok) return;
-        
-        const dbPacks = await response.json();
-        if (!Array.isArray(dbPacks)) return;
-        
-        // Set up watchers for each pack collection
-        dbPacks.forEach((dbPack: any) => {
-          // Watch for Transfer events to the user's address for token ID 5
-          // This will trigger when packs are minted or transferred
-        });
-      } catch (error) {
-        console.error('Error setting up pack watchers:', error);
-      }
-    };
-    
-    setupPackWatchers();
-  }, [address, publicClient]);
+  const loading = !ready || singleLoading || erc1155Loading || busy || !show;
 
-  /* ------------------------------------------------------------------ */
-  /* RENDER                                                             */
-  const loading =
-    !ready ||
-    singleLoading || erc1155Loading ||
-    busy || !show;
-
-  if (loading)                 return <FullPageLoader message="Loading NFTs…"/>;
-  if (!address)                return <Empty label="🔗 Connect your wallet to view NFTs." />;
-  if (!allCollections.length && !packs.length)  return <Empty label="No Collections Found" />;
-  if (!alchemyNfts.length && !packs.length)     return <Empty label="😢 No Cardify NFTs or packs owned yet." />;
+  if (loading) return <FullPageLoader message="Loading NFTs…"/>;
+  if (!address) return <Empty label="🔗 Connect your wallet to view NFTs." />;
+  if (!allCollections.length && !packs.length) return <Empty label="No Collections Found" />;
+  if (!alchemyNfts.length && !packs.length) return <Empty label="😢 No Cardify NFTs or packs owned yet." />;
 
   return (
     <div className="min-h-screen bg-black">
       <div className="container mx-auto px-6 py-20">
         <h1 className="text-3xl font-bold text-white mb-8">Your NFTs</h1>
         
-        {/* Packs Section */}
         {packs.length > 0 && (
           <div className="mb-12">
             <h2 className="text-2xl font-bold text-white mb-6">Your Packs</h2>
@@ -818,28 +761,24 @@ export default function Dashboard() {
           </div>
         )}
         
-        {/* NFTs Section */}
         {alchemyNfts.length > 0 && (
           <div>
             {packs.length > 0 && <h2 className="text-2xl font-bold text-white mb-6">Your NFTs</h2>}
-        <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {alchemyNfts.map(nft => (
-            <AlchemyNFTCard key={nft.uniqueId} nft={nft}/>
-          ))}
-        </div>
-      </div>
+            <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              {alchemyNfts.map(nft => (
+                <AlchemyNFTCard key={nft.uniqueId} nft={nft}/>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
-      {/* Pack View Modal */}
       {selectedPack && (
         <PackOpeningAnimation
           isOpen={showPackView}
           onClose={() => {
             setShowPackView(false);
             setSelectedPack(null);
-            // Refresh packs and NFTs when animation closes
-            console.log('🔄 Refreshing packs and NFTs after closing pack animation...');
             setTimeout(() => {
               loadPacks();
               loadNfts();
@@ -853,7 +792,6 @@ export default function Dashboard() {
   );
 }
 
-/* ------------------------------------------------------------------ */
 function Empty({ label }: { label: string }) {
   return (
     <div className="min-h-screen flex items-center justify-center">
