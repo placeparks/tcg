@@ -403,7 +403,7 @@ export default function Dashboard() {
           const hasAlchemyMetadata = nft.raw?.metadata && (
             nft.raw.metadata.name || 
             nft.raw.metadata.image || 
-            nft.raw.metadata.attributes?.length > 0
+            (nft.raw.metadata.attributes && Array.isArray(nft.raw.metadata.attributes) && nft.raw.metadata.attributes.length > 0)
           );
           
           // Only fetch from IPFS if Alchemy's metadata is incomplete
