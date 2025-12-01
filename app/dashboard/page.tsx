@@ -243,13 +243,33 @@ export default function Dashboard() {
 
       const raw = await getNFTsForOwner(address, allCollections);
 
-      // Pack collections: Token ID 0 is the pack, Token IDs 1-5 are the NFT cards
-      const packTokenIdMap = new Map<string, { packTokenId: bigint; cardTokenIds: bigint[] }>();
-      for (const packAddress of packCollectionAddresses) {
-        packTokenIdMap.set(packAddress.toLowerCase(), { 
-          packTokenId: 0n, 
-          cardTokenIds: [1n, 2n, 3n, 4n, 5n] 
-        });
+      // Pack collections: Token ID 0 is the pack, Token IDs 1+ are the NFT cards
+      // We need to get cardCount from each pack contract to know the valid range
+      const packTokenIdMap = new Map<string, { packTokenId: bigint; cardCount: bigint }>();
+      
+      // Fetch cardCount for each pack collection
+      if (packCollectionAddresses.size > 0 && publicClient) {
+        await Promise.all(Array.from(packCollectionAddresses).map(async (packAddress) => {
+          try {
+            const cardCount = await publicClient.readContract({
+              address: packAddress as `0x${string}`,
+              abi: CONTRACTS.packCollectionAbi,
+              functionName: 'cardCount',
+            }).catch(() => 0n) as bigint;
+            
+            packTokenIdMap.set(packAddress.toLowerCase(), { 
+              packTokenId: 0n, 
+              cardCount: cardCount
+            });
+          } catch (error) {
+            console.warn(`Failed to get cardCount for ${packAddress}:`, error);
+            // Default to allowing all non-zero token IDs if we can't fetch cardCount
+            packTokenIdMap.set(packAddress.toLowerCase(), { 
+              packTokenId: 0n, 
+              cardCount: 0n // 0 means no limit
+            });
+          }
+        }));
       }
 
       const factories = new Set(allCollections.map(c => c.toLowerCase()));
@@ -263,12 +283,16 @@ export default function Dashboard() {
           const tokenId = BigInt(nft.tokenId);
           const tokenIdInfo = packTokenIdMap.get(nft.contract.address.toLowerCase());
           
-          if (!tokenIdInfo) return tokenId !== 0n;
+          // Filter out the pack token ID (0)
+          if (tokenId === 0n) return false;
           
-          // Filter out the pack token ID (0), only show card token IDs (1-5)
-          if (tokenId === tokenIdInfo.packTokenId) return false;
+          // If we have cardCount info, only allow token IDs 1 to cardCount
+          if (tokenIdInfo && tokenIdInfo.cardCount > 0n) {
+            return tokenId >= 1n && tokenId <= tokenIdInfo.cardCount;
+          }
           
-          return tokenIdInfo.cardTokenIds.includes(tokenId);
+          // If no cardCount info, allow all non-zero token IDs
+          return tokenId > 0n;
         }
         
         return true;
@@ -298,14 +322,17 @@ export default function Dashboard() {
                     console.warn(`Failed to parse URIs for ${collectionLower}`);
                   }
                   
-                  // Map token IDs 1-5 to array indices 0-4
+                  // Map token IDs to array indices
+                  // allTokenUris[0] = pack URI, allTokenUris[1+] = card URIs
+                  // So token ID 1 = index 1, token ID 2 = index 2, etc.
                   const tokenIdMap = new Map<number, { uri: string; imageUri?: string }>();
-                  for (let tokenId = 1; tokenId <= 5; tokenId++) {
-                    const uriIndex = tokenId - 1;
-                    if (uriIndex < allTokenUris.length && allTokenUris[uriIndex]) {
+                  // Process all available token URIs (skip index 0 which is the pack)
+                  for (let i = 1; i < allTokenUris.length; i++) {
+                    const tokenId = i; // Token ID matches the index (since pack is at 0)
+                    if (allTokenUris[i]) {
                       tokenIdMap.set(tokenId, {
-                        uri: allTokenUris[uriIndex],
-                        imageUri: nftImageUris[uriIndex]
+                        uri: allTokenUris[i],
+                        imageUri: nftImageUris[i - 1] || undefined // nftImageUris doesn't include pack, so index is i-1
                       });
                     }
                   }
@@ -334,45 +361,63 @@ export default function Dashboard() {
         const tokenIdNum = Number(nft.tokenId);
         const isPackCollection = packCollectionAddresses.has(collectionLower);
         
-        if (isPackCollection && tokenIdNum >= 1 && tokenIdNum <= 5) {
+        // For pack collections, handle any card token ID (1 to cardCount)
+        if (isPackCollection && tokenIdNum >= 1) {
           const uriMap = packUriMap.get(collectionLower);
-          if (uriMap) {
-            const uriData = uriMap.get(tokenIdNum);
-            if (uriData && uriData.uri) {
-              try {
-                const metadataResponse = await fetch(`/api/ipfs-metadata?src=${encodeURIComponent(uriData.uri)}&tokenId=${tokenIdNum}`);
-                if (metadataResponse.ok) {
-                  const metadata = await metadataResponse.json();
-                  
-                  nftToAdd = {
-                    ...nftToAdd,
-                    name: metadata.name || nftToAdd.name || `NFT #${tokenIdNum}`,
-                    raw: {
-                      ...nftToAdd.raw,
-                      metadata: {
-                        ...nftToAdd.raw?.metadata,
-                        name: metadata.name,
-                        description: metadata.description,
-                        image: metadata.imageUrl || uriData.imageUri,
-                        attributes: metadata.attributes || []
-                      },
-                      tokenUri: {
-                        raw: uriData.uri,
-                        gateway: uriData.uri.startsWith('ipfs://') 
-                          ? `https://gateway.pinata.cloud/ipfs/${uriData.uri.replace('ipfs://', '')}`
-                          : uriData.uri
-                      }
-                    },
-                    tokenUri: uriData.uri,
-                    image: {
-                      cachedUrl: metadata.imageUrl || uriData.imageUri,
-                      originalUrl: metadata.imageUrl || uriData.imageUri
-                    }
-                  };
-                }
-              } catch (error) {
-                console.warn(`Error fetching metadata for token ID ${tokenIdNum}:`, error);
+          let uriData = uriMap?.get(tokenIdNum);
+          
+          // If URI not in database map, try fetching from contract
+          if (!uriData && publicClient) {
+            try {
+              const contractUri = await publicClient.readContract({
+                address: nft.contract.address as `0x${string}`,
+                abi: CONTRACTS.packCollectionAbi,
+                functionName: 'uri',
+                args: [BigInt(tokenIdNum)],
+              }).catch(() => null);
+              
+              if (contractUri) {
+                uriData = { uri: contractUri as string };
               }
+            } catch (error) {
+              console.warn(`Error fetching URI from contract for token ID ${tokenIdNum}:`, error);
+            }
+          }
+          
+          if (uriData && uriData.uri) {
+            try {
+              const metadataResponse = await fetch(`/api/ipfs-metadata?src=${encodeURIComponent(uriData.uri)}&tokenId=${tokenIdNum}`);
+              if (metadataResponse.ok) {
+                const metadata = await metadataResponse.json();
+                
+                nftToAdd = {
+                  ...nftToAdd,
+                  name: metadata.name || nftToAdd.name || `NFT #${tokenIdNum}`,
+                  raw: {
+                    ...nftToAdd.raw,
+                    metadata: {
+                      ...nftToAdd.raw?.metadata,
+                      name: metadata.name,
+                      description: metadata.description,
+                      image: metadata.imageUrl || uriData.imageUri,
+                      attributes: metadata.attributes || []
+                    },
+                    tokenUri: {
+                      raw: uriData.uri,
+                      gateway: uriData.uri.startsWith('ipfs://') 
+                        ? `https://gateway.pinata.cloud/ipfs/${uriData.uri.replace('ipfs://', '')}`
+                        : uriData.uri
+                    }
+                  },
+                  tokenUri: uriData.uri,
+                  image: {
+                    cachedUrl: metadata.imageUrl || uriData.imageUri,
+                    originalUrl: metadata.imageUrl || uriData.imageUri
+                  }
+                };
+              }
+            } catch (error) {
+              console.warn(`Error fetching metadata for token ID ${tokenIdNum}:`, error);
             }
           }
         }
@@ -440,16 +485,30 @@ export default function Dashboard() {
       }
 
       // Wait a moment for the transaction to be mined and state to update
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Check balance for all possible card token IDs (1 to cardCount)
       // to find which random cards were actually minted
       const cardCountNum = Number(cardCount);
+      
+      if (cardCountNum === 0 || cardCountNum > 10000) {
+        console.error(`Invalid cardCount: ${cardCountNum}`);
+        setSelectedPack({
+          packAddress: packAddress,
+          name: packName,
+          nftMetadata: []
+        });
+        setShowPackView(true);
+        return;
+      }
+      
       const allCardIds = Array.from({ length: cardCountNum }, (_, i) => BigInt(i + 1));
       
       // Limit batch size to avoid RPC timeouts (max 100 at a time)
       const BATCH_SIZE = 100;
       const receivedCardIds: bigint[] = [];
+      
+      console.log(`🔍 Checking balances for ${cardCountNum} possible cards...`);
       
       for (let i = 0; i < allCardIds.length; i += BATCH_SIZE) {
         const batchIds = allCardIds.slice(i, i + BATCH_SIZE);
@@ -484,8 +543,10 @@ export default function Dashboard() {
 
       // If we didn't find any cards, try checking again after a longer delay
       if (receivedCardIds.length === 0) {
-        console.warn('No cards found, waiting longer and retrying...');
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        console.warn('⚠️ No cards found on first check. Waiting longer and retrying...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        console.log(`🔄 Retrying balance check for ${cardCountNum} cards...`);
         
         // Retry with smaller batches
         receivedCardIds.length = 0;
@@ -575,11 +636,33 @@ export default function Dashboard() {
 
       const nftMetadata = await Promise.all(nftMetadataPromises);
 
-      setSelectedPack({
-        packAddress: packAddress,
-        name: packName,
-        nftMetadata: nftMetadata
-      });
+      console.log(`✅ Final nftMetadata:`, nftMetadata);
+      console.log(`📊 Number of cards to display:`, nftMetadata.length);
+
+      // If no cards found, show a message or placeholder
+      if (nftMetadata.length === 0) {
+        console.warn('⚠️ No cards found after opening pack. Showing placeholder.');
+        // Show placeholder cards based on packSize
+        const placeholderCards = Array.from({ length: Number(packSize || 5n) }, (_, i) => ({
+          name: `Card #${i + 1}`,
+          description: 'Card metadata loading...',
+          image: '/cardifyN.png',
+          attributes: []
+        }));
+        
+        setSelectedPack({
+          packAddress: packAddress,
+          name: packName,
+          nftMetadata: placeholderCards
+        });
+      } else {
+        setSelectedPack({
+          packAddress: packAddress,
+          name: packName,
+          nftMetadata: nftMetadata
+        });
+      }
+      
       setShowPackView(true);
       
       setTimeout(() => {
@@ -588,6 +671,18 @@ export default function Dashboard() {
       }, 3000);
     } catch (error) {
       console.error('Error opening pack:', error);
+      // Even on error, show something so user knows the pack was opened
+      setSelectedPack({
+        packAddress: packAddress,
+        name: packName,
+        nftMetadata: [{
+          name: 'Pack Opened',
+          description: 'Cards are being processed. Please refresh to see your new cards.',
+          image: '/cardifyN.png',
+          attributes: []
+        }]
+      });
+      setShowPackView(true);
     }
   };
 
