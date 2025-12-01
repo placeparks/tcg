@@ -33,6 +33,14 @@ export async function GET(req: NextRequest) {
         // strip hop-by-hop headers
         headers.delete("transfer-encoding");
         headers.delete("connection");
+        // Remove compression headers - fetch() auto-decompresses, so these cause ERR_CONTENT_DECODING_FAILED
+        headers.delete("content-encoding");
+        headers.delete("content-length"); // Length changes after decompression
+        // Preserve content-type for proper image rendering
+        const contentType = upstream.headers.get("content-type");
+        if (contentType) {
+          headers.set("content-type", contentType);
+        }
         return new NextResponse(upstream.body, { status: 200, headers });
       }
     } catch (error) {
