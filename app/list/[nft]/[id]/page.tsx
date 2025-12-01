@@ -247,21 +247,8 @@ export default function ListingPage() {
     });
 
     try {
-      // Determine the correct token id to list (packs use a dedicated packTokenId)
-      let listingId = tokenId;
-      try {
-        const packId = await publicClient.readContract({
-          address: nftAddr,
-          abi: CONTRACTS.packCollectionAbi,
-          functionName: 'packTokenId',
-        });
-        if (typeof packId === 'bigint') {
-          listingId = packId as bigint;
-          console.log('Using packTokenId for listing:', listingId.toString());
-        }
-      } catch (_) {
-        // Not a pack collection or function not present; keep route tokenId
-      }
+      // Use the token ID from the route directly
+      const listingId = tokenId;
 
       setBusy(true);
       toast.loading("Checking approval…", { id: "tx" });
