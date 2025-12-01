@@ -13,35 +13,64 @@ export async function GET(req: NextRequest) {
   const src = req.nextUrl.searchParams.get("src");
   if (!src) return NextResponse.json({ error: "src required" }, { status: 400 });
 
-  // Accept ipfs://..., https://<gw>/ipfs/<cid>, or bare CID
-  const raw = src
-    .replace(/^https?:\/\/[^/]+\/ipfs\//, "ipfs://")
-    .replace(/^ipfs:\/\//, "");
+  // Extract CID from various formats: ipfs://..., https://<gw>/ipfs/<cid>, or bare CID
+  let raw: string;
+  let directUrl: string | null = null;
+  
+  // If it's already a full HTTP URL from a known gateway, try it first
+  if (src.startsWith("http://") || src.startsWith("https://")) {
+    const urlMatch = src.match(/^https?:\/\/([^/]+)\/ipfs\/(.+)$/);
+    if (urlMatch) {
+      directUrl = src; // Use the URL directly
+      raw = urlMatch[2]; // Extract CID for fallback gateways
+    } else {
+      // Not an IPFS gateway URL, return as-is
+      return NextResponse.json({ error: "Invalid IPFS URL format" }, { status: 400 });
+    }
+  } else {
+    raw = src.replace(/^ipfs:\/\//, "");
+  }
 
+  // Try direct URL first if available
+  if (directUrl) {
+    try {
+      const upstream = await fetch(directUrl, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(8000),
+      });
+      if (upstream.ok) {
+        const arrayBuffer = await upstream.arrayBuffer();
+        const headers = new Headers();
+        headers.set("Cache-Control", "public, max-age=31536000, immutable, stale-while-revalidate=86400");
+        const contentType = upstream.headers.get("content-type");
+        if (contentType) {
+          headers.set("content-type", contentType);
+        }
+        return new NextResponse(arrayBuffer, { status: 200, headers });
+      }
+    } catch (error) {
+      console.log(`Direct URL ${directUrl} failed:`, error);
+      // Fall through to try other gateways
+    }
+  }
+
+  // Try other gateways as fallback
   for (const gw of PUBLIC_GATEWAYS) {
     const url = `${gw}/ipfs/${raw}`;
     try {
       const upstream = await fetch(url, {
         cache: "no-store",
-        // Add timeout to prevent hanging
-        signal: AbortSignal.timeout(8000), // 8 second timeout per gateway
+        signal: AbortSignal.timeout(8000),
       });
       if (upstream.ok) {
-        const headers = new Headers(upstream.headers);
-        // Better caching for images - cache for 1 year, with stale-while-revalidate
+        const arrayBuffer = await upstream.arrayBuffer();
+        const headers = new Headers();
         headers.set("Cache-Control", "public, max-age=31536000, immutable, stale-while-revalidate=86400");
-        // strip hop-by-hop headers
-        headers.delete("transfer-encoding");
-        headers.delete("connection");
-        // Remove compression headers - fetch() auto-decompresses, so these cause ERR_CONTENT_DECODING_FAILED
-        headers.delete("content-encoding");
-        headers.delete("content-length"); // Length changes after decompression
-        // Preserve content-type for proper image rendering
         const contentType = upstream.headers.get("content-type");
         if (contentType) {
           headers.set("content-type", contentType);
         }
-        return new NextResponse(upstream.body, { status: 200, headers });
+        return new NextResponse(arrayBuffer, { status: 200, headers });
       }
     } catch (error) {
       console.log(`IPFS gateway ${gw} failed for ${raw}:`, error);
