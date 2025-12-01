@@ -12,7 +12,7 @@ import {
 import FullPageLoader     from "@/components/FullPageLoader";
 import AlchemyNFTCard     from "@/components/AlchemyNFTCard";
 import { CONTRACTS }      from "@/lib/contract";
-import { getNFTsForOwner, AlchemyNFT } from "@/lib/alchemy";
+import { getNFTsForOwner, AlchemyNFT, getBestImageUrl } from "@/lib/alchemy";
 import PackOpeningAnimation from "@/components/PackOpeningAnimation";
 import DashboardPackCard from "@/components/DashboardPackCard";
 
@@ -101,16 +101,30 @@ export default function Dashboard() {
               let nftImageUris: string[] = [];
               let allTokenUris: string[] = [];
               
-              try {
-                nftImageUris = JSON.parse(dbPack.nft_image_uris || '[]') as string[];
-              } catch (e) {
-                console.warn('Failed to parse nft_image_uris');
+              // Handle nft_image_uris - could be array, JSON string, or null/undefined
+              if (dbPack.nft_image_uris) {
+                if (Array.isArray(dbPack.nft_image_uris)) {
+                  nftImageUris = dbPack.nft_image_uris;
+                } else if (typeof dbPack.nft_image_uris === 'string') {
+                  try {
+                    nftImageUris = JSON.parse(dbPack.nft_image_uris);
+                  } catch (e) {
+                    // Silently fail - use empty array
+                  }
+                }
               }
               
-              try {
-                allTokenUris = JSON.parse(dbPack.all_token_uris || '[]') as string[];
-              } catch (e) {
-                console.warn('Failed to parse all_token_uris');
+              // Handle all_token_uris - could be array, JSON string, or null/undefined
+              if (dbPack.all_token_uris) {
+                if (Array.isArray(dbPack.all_token_uris)) {
+                  allTokenUris = dbPack.all_token_uris;
+                } else if (typeof dbPack.all_token_uris === 'string') {
+                  try {
+                    allTokenUris = JSON.parse(dbPack.all_token_uris);
+                  } catch (e) {
+                    // Silently fail - use empty array
+                  }
+                }
               }
               
               return {
@@ -315,11 +329,30 @@ export default function Dashboard() {
                   let allTokenUris: string[] = [];
                   let nftImageUris: string[] = [];
                   
-                  try {
-                    allTokenUris = JSON.parse(dbPack.all_token_uris || '[]') as string[];
-                    nftImageUris = JSON.parse(dbPack.nft_image_uris || '[]') as string[];
-                  } catch (e) {
-                    console.warn(`Failed to parse URIs for ${collectionLower}`);
+                  // Handle all_token_uris - could be array, JSON string, or null/undefined
+                  if (dbPack.all_token_uris) {
+                    if (Array.isArray(dbPack.all_token_uris)) {
+                      allTokenUris = dbPack.all_token_uris;
+                    } else if (typeof dbPack.all_token_uris === 'string') {
+                      try {
+                        allTokenUris = JSON.parse(dbPack.all_token_uris);
+                      } catch (e) {
+                        // Silently fail - use empty array
+                      }
+                    }
+                  }
+                  
+                  // Handle nft_image_uris - could be array, JSON string, or null/undefined
+                  if (dbPack.nft_image_uris) {
+                    if (Array.isArray(dbPack.nft_image_uris)) {
+                      nftImageUris = dbPack.nft_image_uris;
+                    } else if (typeof dbPack.nft_image_uris === 'string') {
+                      try {
+                        nftImageUris = JSON.parse(dbPack.nft_image_uris);
+                      } catch (e) {
+                        // Silently fail - use empty array
+                      }
+                    }
                   }
                   
                   // Map token IDs to array indices
@@ -362,63 +395,83 @@ export default function Dashboard() {
         const isPackCollection = packCollectionAddresses.has(collectionLower);
         
         // For pack collections, handle any card token ID (1 to cardCount)
+        // First, check if Alchemy already has good metadata
         if (isPackCollection && tokenIdNum >= 1) {
-          const uriMap = packUriMap.get(collectionLower);
-          let uriData = uriMap?.get(tokenIdNum);
+          // Check if Alchemy already has complete metadata
+          const hasAlchemyName = nft.name && nft.name !== `#${tokenIdNum}`;
+          const hasAlchemyImage = getBestImageUrl(nft) !== null;
+          const hasAlchemyMetadata = nft.raw?.metadata && (
+            nft.raw.metadata.name || 
+            nft.raw.metadata.image || 
+            nft.raw.metadata.attributes?.length > 0
+          );
           
-          // If URI not in database map, try fetching from contract
-          if (!uriData && publicClient) {
-            try {
-              const contractUri = await publicClient.readContract({
-                address: nft.contract.address as `0x${string}`,
-                abi: CONTRACTS.packCollectionAbi,
-                functionName: 'uri',
-                args: [BigInt(tokenIdNum)],
-              }).catch(() => null);
-              
-              if (contractUri) {
-                uriData = { uri: contractUri as string };
-              }
-            } catch (error) {
-              console.warn(`Error fetching URI from contract for token ID ${tokenIdNum}:`, error);
-            }
-          }
-          
-          if (uriData && uriData.uri) {
-            try {
-              const metadataResponse = await fetch(`/api/ipfs-metadata?src=${encodeURIComponent(uriData.uri)}&tokenId=${tokenIdNum}`);
-              if (metadataResponse.ok) {
-                const metadata = await metadataResponse.json();
+          // Only fetch from IPFS if Alchemy's metadata is incomplete
+          if (!hasAlchemyMetadata || (!hasAlchemyName && !hasAlchemyImage)) {
+            const uriMap = packUriMap.get(collectionLower);
+            let uriData = uriMap?.get(tokenIdNum);
+            
+            // If URI not in database map, try fetching from contract
+            if (!uriData && publicClient) {
+              try {
+                const contractUri = await publicClient.readContract({
+                  address: nft.contract.address as `0x${string}`,
+                  abi: CONTRACTS.packCollectionAbi,
+                  functionName: 'uri',
+                  args: [BigInt(tokenIdNum)],
+                }).catch(() => null);
                 
-                nftToAdd = {
-                  ...nftToAdd,
-                  name: metadata.name || nftToAdd.name || `NFT #${tokenIdNum}`,
-                  raw: {
-                    ...nftToAdd.raw,
-                    metadata: {
-                      ...nftToAdd.raw?.metadata,
-                      name: metadata.name,
-                      description: metadata.description,
-                      image: metadata.imageUrl || uriData.imageUri,
-                      attributes: metadata.attributes || []
-                    },
-                    tokenUri: {
-                      raw: uriData.uri,
-                      gateway: uriData.uri.startsWith('ipfs://') 
-                        ? `https://gateway.pinata.cloud/ipfs/${uriData.uri.replace('ipfs://', '')}`
-                        : uriData.uri
-                    }
-                  },
-                  tokenUri: uriData.uri,
-                  image: {
-                    cachedUrl: metadata.imageUrl || uriData.imageUri,
-                    originalUrl: metadata.imageUrl || uriData.imageUri
-                  }
-                };
+                if (contractUri) {
+                  uriData = { uri: contractUri as string };
+                }
+              } catch (error) {
+                console.warn(`Error fetching URI from contract for token ID ${tokenIdNum}:`, error);
               }
-            } catch (error) {
-              console.warn(`Error fetching metadata for token ID ${tokenIdNum}:`, error);
             }
+            
+            // Only fetch from IPFS if we have a URI and Alchemy doesn't have complete data
+            if (uriData && uriData.uri) {
+              try {
+                const metadataResponse = await fetch(`/api/ipfs-metadata?src=${encodeURIComponent(uriData.uri)}&tokenId=${tokenIdNum}`);
+                if (metadataResponse.ok) {
+                  const metadata = await metadataResponse.json();
+                  
+                  // Merge IPFS metadata with Alchemy data (Alchemy takes priority)
+                  nftToAdd = {
+                    ...nftToAdd,
+                    name: nft.name || metadata.name || `NFT #${tokenIdNum}`,
+                    description: nft.description || metadata.description,
+                    raw: {
+                      ...nftToAdd.raw,
+                      metadata: {
+                        ...nftToAdd.raw?.metadata,
+                        name: nft.name || metadata.name || `NFT #${tokenIdNum}`,
+                        description: nft.description || metadata.description || nftToAdd.raw?.metadata?.description,
+                        image: nftToAdd.raw?.metadata?.image || metadata.imageUrl || uriData.imageUri,
+                        attributes: nftToAdd.raw?.metadata?.attributes || metadata.attributes || []
+                      },
+                      tokenUri: nftToAdd.raw?.tokenUri || {
+                        raw: uriData.uri,
+                        gateway: uriData.uri.startsWith('ipfs://') 
+                          ? `https://gateway.pinata.cloud/ipfs/${uriData.uri.replace('ipfs://', '')}`
+                          : uriData.uri
+                      }
+                    },
+                    tokenUri: nft.tokenUri || uriData.uri,
+                    // Only override image if Alchemy doesn't have one
+                    image: nft.image || {
+                      cachedUrl: metadata.imageUrl || uriData.imageUri,
+                      originalUrl: metadata.imageUrl || uriData.imageUri
+                    }
+                  };
+                }
+              } catch (error) {
+                console.warn(`Error fetching metadata for token ID ${tokenIdNum}:`, error);
+              }
+            }
+          } else {
+            // Alchemy has good metadata, just use it as-is
+            console.log(`✅ Using Alchemy metadata for pack NFT ${tokenIdNum} from ${collectionLower}`);
           }
         }
         
