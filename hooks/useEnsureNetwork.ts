@@ -3,13 +3,13 @@
 
 import { useEffect } from "react";
 import { switchChain, watchAccount } from "@wagmi/core";
-import { wagmi } from "../app/providers";   // ← the createConfig(...) you export
+import { wagmi } from "@/app/Privy-provider"; 
                                        
-/** wagmi ID for Base-Sepolia */
-export const BASE_SEPOLIA = 84532 as const;
+/** wagmi ID for Base Mainnet */
+export const BASE = 84532 as const;
 
 /**
- * Keeps the connected wallet on Base-Sepolia.
+ * Keeps the connected wallet on Base Mainnet.
  * – prompts a switch
  *     • right after the wallet connects
  *     • whenever the user manually changes networks
@@ -23,12 +23,12 @@ export default function useEnsureBaseSepolia() {
         if (!acct.address) return;
 
         // already on the right chain? → we're good
-        if (acct.chainId === BASE_SEPOLIA) return;
+        if (acct.chainId === BASE) return;
 
         // otherwise ask the wallet to switch.
         // if the user rejects, we simply stay silent
         try {
-          await switchChain(wagmi, { chainId: BASE_SEPOLIA });
+          await switchChain(wagmi, { chainId: BASE });
         } catch {
           /* user rejected – ignore */
         }
