@@ -3,10 +3,11 @@
 
 import { PrivyProvider, type PrivyClientConfig } from '@privy-io/react-auth'
 import { WagmiProvider, createConfig, http } from 'wagmi'
-import { baseSepolia } from 'wagmi/chains'
+import { baseSepolia, base } from 'wagmi/chains'
 import { QueryClientProvider, QueryClient } from '@tanstack/react-query'
 import { ReactNode } from 'react'
 import { privyConfig as basePrivy } from '@/lib/privy-config'
+import { coinbaseWallet, injected } from 'wagmi/connectors'
 
 type ProvidersProps = {
   children: ReactNode
@@ -15,13 +16,17 @@ type ProvidersProps = {
 
 export const wagmi = createConfig({
   chains: [baseSepolia],
+  connectors: [
+    coinbaseWallet({ appName: 'Cardify' }),
+    injected(),
+  ],
   transports: { [baseSepolia.id]: http() },
 });
 
 
 const query = new QueryClient()
 
-export function Providers({ children, config }: ProvidersProps) {
+export function PrivyProviders({ children, config }: ProvidersProps) {
   /** merge caller‑supplied tweaks with the shared default */
   const merged: PrivyClientConfig = { ...basePrivy, ...config }
 
