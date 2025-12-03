@@ -125,7 +125,7 @@ const { switchChainAsync } = useSwitchChain();
         const count = Number(totalCollectionsERC1155 as bigint);
         console.log('🔍 Fetching ERC1155 collections:', count);
         
-        const erc1155Addrs = await Promise.all(
+        const erc1155Addrs: (`0x${string}` | null)[] = await Promise.all(
           Array.from({ length: count }, (_, i) =>
             publicClient.readContract({
               address: CONTRACTS.factoryERC1155 as `0x${string}`,
@@ -135,10 +135,10 @@ const { switchChainAsync } = useSwitchChain();
             }).catch(() => null)
           )
         );
-        
+
         erc1155Addrs
-          .filter((addr: string | null): addr is string => !!addr)
-          .forEach((addr: string) => collectionsList.push(addr));
+          .filter((addr: `0x${string}` | null): addr is `0x${string}` => !!addr)
+          .forEach((addr) => collectionsList.push(addr));
       }
       
       // Fetch from Single factory (parallelized)
@@ -146,7 +146,7 @@ const { switchChainAsync } = useSwitchChain();
         const count = Number(totalCollectionsSingle as bigint);
         console.log('🔍 Fetching Single factory collections:', count);
         
-        const singleAddrs = await Promise.all(
+        const singleAddrs: (`0x${string}` | null)[] = await Promise.all(
           Array.from({ length: count }, (_, i) =>
             publicClient.readContract({
               address: CONTRACTS.singleFactory as `0x${string}`,
@@ -156,10 +156,10 @@ const { switchChainAsync } = useSwitchChain();
             }).catch(() => null)
           )
         );
-        
+
         singleAddrs
-          .filter((addr: string | null): addr is string => !!addr)
-          .forEach((addr: string) => collectionsList.push(addr));
+          .filter((addr: `0x${string}` | null): addr is `0x${string}` => !!addr)
+          .forEach((addr) => collectionsList.push(addr));
       }
       
       // Fetch Pack collections from database
