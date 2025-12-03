@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback, useRef, useMemo } from "react"
+import { useEffect, useState, useCallback, useRef } from "react"
 import {
   useAccount,
   usePublicClient,
@@ -28,17 +28,58 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import useEnsureBaseSepolia from "@/hooks/useEnsureNetwork";
 import FullPageLoader from "@/components/FullPageLoader" 
-import { chunked, metaCache } from "@/lib/net-utils";
+import { metaCache } from "@/lib/net-utils";
 import { wagmi } from "../providers";
+import { useMarketplaceListings } from "@/hooks/useMarketplaceListings";
 
 
 /* ─── constants ─── */
 const CHAIN_ID = 84532
 
 const ipfsToHttp = (u: string) => u.replace(/^ipfs:\/\//, "https://gateway.pinata.cloud/ipfs/")
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
 
-type ListingStruct = { seller: `0x${string}`; price: bigint }
 type Listing1155Tuple = readonly [`0x${string}`, bigint] // [seller, unitPrice]
+
+type ListedItem = {
+  collection: string;
+  id: number;
+  seller: `0x${string}`;
+  price: bigint;
+  metadata: { name?: string; image?: string; [k: string]: any };
+};
+
+// wait until the wallet really switched
+const waitForChain = (target: number, timeoutMs = 15000) =>
+  new Promise<void>((resolve, reject) => {
+    let done = false;
+
+    const unwatch = watchAccount(wagmi, {
+      onChange(acct) {
+        if (done) return;
+        if (!acct.isConnected) {
+          done = true;
+          clearTimeout(timer);
+          unwatch();
+          reject(new Error("disconnected"));
+          return;
+        }
+        if (acct.chainId === target) {
+          done = true;
+          clearTimeout(timer);
+          unwatch();
+          resolve();
+        }
+      },
+    });
+
+    const timer = setTimeout(() => {
+      if (done) return;
+      done = true;
+      unwatch();
+      reject(new Error("chain switch timeout"));
+    }, timeoutMs);
+  });
 
 export default function BuyPage() {
   useEnsureBaseSepolia(); 
@@ -79,44 +120,46 @@ const { switchChainAsync } = useSwitchChain();
       const collectionsList: string[] = [];
       const packCollectionSet = new Set<string>();
       
-      // Fetch from ERC1155 factory
+      // Fetch from ERC1155 factory (parallelized)
       if (totalCollectionsERC1155) {
         const count = Number(totalCollectionsERC1155 as bigint);
         console.log('🔍 Fetching ERC1155 collections:', count);
         
-        for (let i = 0; i < count; i++) {
-          try {
-            const address = await publicClient.readContract({
+        const erc1155Addrs = await Promise.all(
+          Array.from({ length: count }, (_, i) =>
+            publicClient.readContract({
               address: CONTRACTS.factoryERC1155 as `0x${string}`,
               abi: CONTRACTS.factoryERC1155Abi,
               functionName: "allCollections",
               args: [BigInt(i)],
-            });
-            collectionsList.push(address as string);
-          } catch (error) {
-            console.error(`Error fetching ERC1155 collection at index ${i}:`, error);
-          }
-        }
+            }).catch(() => null)
+          )
+        );
+        
+        erc1155Addrs
+          .filter((addr: string | null): addr is string => !!addr)
+          .forEach((addr: string) => collectionsList.push(addr));
       }
       
-      // Fetch from Single factory
+      // Fetch from Single factory (parallelized)
       if (totalCollectionsSingle) {
         const count = Number(totalCollectionsSingle as bigint);
         console.log('🔍 Fetching Single factory collections:', count);
         
-        for (let i = 0; i < count; i++) {
-          try {
-            const address = await publicClient.readContract({
+        const singleAddrs = await Promise.all(
+          Array.from({ length: count }, (_, i) =>
+            publicClient.readContract({
               address: CONTRACTS.singleFactory as `0x${string}`,
               abi: CONTRACTS.singleFactoryAbi,
               functionName: "allCollections",
               args: [BigInt(i)],
-            });
-            collectionsList.push(address as string);
-          } catch (error) {
-            console.error(`Error fetching Single factory collection at index ${i}:`, error);
-          }
-        }
+            }).catch(() => null)
+          )
+        );
+        
+        singleAddrs
+          .filter((addr: string | null): addr is string => !!addr)
+          .forEach((addr: string) => collectionsList.push(addr));
       }
       
       // Fetch Pack collections from database
@@ -140,228 +183,22 @@ const { switchChainAsync } = useSwitchChain();
         console.error('Error fetching pack collections:', error);
       }
       
-      console.log('🏭 Fetched All Collections:', collectionsList);
+      // Dedupe collections (same address might appear in multiple sources)
+      const unique = Array.from(new Set(collectionsList.map(a => a.toLowerCase())));
+      console.log('🏭 Fetched All Collections:', unique);
       console.log('📦 Pack Collections:', Array.from(packCollectionSet));
-      setCollections(collectionsList);
+      setCollections(unique);
       packCollectionsRef.current = packCollectionSet;
     };
     
     fetchCollections();
   }, [totalCollectionsERC1155, totalCollectionsSingle, publicClient]);
 
-  /* listings state */
-  const [listedNFTs, setListedNFTs] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [firstFetchDone, setFirstFetchDone] = useState(false) // prevent empty-state flash
-  const [hoveredCard, setHoveredCard] = useState<string | null>(null)
-  const inFlight = useRef(false)
-  const lastFetchedCollections = useRef<string>('')
-  const fetchTimeout = useRef<NodeJS.Timeout | null>(null)
-
-/* ─────────── fast, dependency-free fetcher ─────────── */
-const fetchListings = useCallback(async () => {
-  if (inFlight.current) return;        // prevent overlap without deadlock
-  
-  // Clear any existing timeout
-  if (fetchTimeout.current) {
-    clearTimeout(fetchTimeout.current);
-  }
-  
-  // Debounce the fetch to prevent rapid successive calls
-  fetchTimeout.current = setTimeout(async () => {
-  inFlight.current = true;
-  try {
-    setLoading(true);
-
-    // 1) supplies - prefer totalMinted over maxSupply, or cardCount for pack collections
-    const supplies: bigint[] = [];
-    for (const col of collections) {
-      let supply = 0n;
-      const isPackCollection = packCollectionsRef.current.has(col.toLowerCase());
-
-      if (isPackCollection) {
-        /* For pack collections, use cardCount */
-        try {
-          supply = await publicClient.readContract({
-            address: col as `0x${string}`,
-            abi: CONTRACTS.packCollectionAbi,
-            functionName: "cardCount",
-          }) as bigint;
-          console.log(`✅ cardCount for pack collection ${col}:`, supply);
-          // Add 1 to include token ID 0 (the pack itself)
-          supply = supply + 1n;
-        } catch {
-          console.log(`⚠️ cardCount not available for pack collection ${col}`);
-        }
-      } else {
-        /* prefer totalMinted first */
-        try {
-          supply = await publicClient.readContract({
-            address: col as `0x${string}`,
-            abi: CONTRACTS.nft1155Abi,
-            functionName: "totalMinted",
-          }) as bigint;
-          console.log(`✅ totalMinted for ${col}:`, supply);
-        } catch {
-          console.log(`⚠️ totalMinted not available for ${col}, trying maxSupply...`);
-        }
-
-        /* fall back to maxSupply if totalMinted failed */
-        if (supply === 0n) {
-          try {
-            supply = await publicClient.readContract({
-              address: col as `0x${string}`,
-              abi: CONTRACTS.nft1155Abi,
-              functionName: "maxSupply",
-            }) as bigint;
-            console.log(`✅ maxSupply fallback for ${col}:`, supply);
-          } catch {
-            console.log(`⚠️ maxSupply also failed for ${col}`);
-          }
-        }
-      }
-
-      /* default to 1 so we at least check token #0 */
-      if (supply === 0n) {
-        supply = 1n;
-        console.log(`🔄 Using fallback value 1 for ${col}`);
-      }
-
-      supplies.push(supply);
-    }
-
-    const items: any[] = [];
-
-    // 2) per-collection
-  await Promise.all(
-      collections.map(async (col: string, idx: number) => {
-      const total = supplies[idx] ?? 0n;
-        if (total === 0n) return;
-
-        // Check only minted tokens (limit to first 100 for safety)
-        const minted = Number(total);
-        const check = Math.min(minted, 100);
-        const liveIdx: number[] = [];
-        const listings: [string, bigint][] = [];
-        
-        for (let tokenId = 0; tokenId < check; tokenId++) {
-          try {
-            const listing = await publicClient.readContract({
-              address: CONTRACTS.marketplace,
-              abi: CONTRACTS.marketplaceAbi,
-              functionName: "listings1155",
-              args: [col as `0x${string}`, BigInt(tokenId)],
-            }) as [string, bigint];
-            
-            const [seller, unitPrice] = listing;
-            const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
-            
-            // Check if listing exists (seller is not zero address and price is not zero)
-            if (seller.toLowerCase() === ZERO_ADDRESS.toLowerCase() || unitPrice === 0n) {
-              // Not listed - skip silently for most tokens, but log first few for debugging
-              if (tokenId < 3) {
-                console.log(`🔍 Token ${tokenId} not listed: seller=${seller}, price=${unitPrice.toString()}`);
-              }
-              continue;
-            }
-            
-            liveIdx.push(tokenId);
-            listings.push(listing);
-            console.log(`✅ Live listing found for ${col} token ${tokenId}:`, { seller, price: unitPrice.toString() });
-          } catch (error: any) {
-            console.error(`❌ Error checking listing for ${col} token ${tokenId}:`, error?.message || error);
-          }
-        }
-        
-        console.log(`📊 Collection ${col}: checked ${check} tokens, found ${liveIdx.length} listings`);
-
-        if (!liveIdx.length) return;
-
-      const tokenUris: string[] = [];
-      const isPackCollection = packCollectionsRef.current.has(col.toLowerCase());
-      for (const i of liveIdx) {
-        try {
-          const uri = await publicClient.readContract({
-              address: col as `0x${string}`,
-            abi: isPackCollection ? CONTRACTS.packCollectionAbi : CONTRACTS.nft1155Abi,
-            functionName: "uri",
-            args: [BigInt(i)],
-          }) as string;
-          tokenUris.push(uri);
-          console.log(`✅ URI for ${col} token ${i}:`, uri);
-          } catch {
-            tokenUris.push(`ipfs://fallback/${i}`);
-          }
-        }
-
-      const metas: any[] = [];
-        for (let j = 0; j < tokenUris.length; j++) {
-          const uri = tokenUris[j];
-        try {
-          if (metaCache.has(uri)) {
-            metas.push(metaCache.get(uri));
-            continue;
-          }
-            const res = await fetch(ipfsToHttp(uri));
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
-            const ct = res.headers.get('content-type') || '';
-            if (ct.includes('image/')) {
-              const md = { name: `NFT #${liveIdx[j]}`, image: ipfsToHttp(uri) };
-              metaCache.set(uri, md);
-              metas.push(md);
-            } else {
-              const md = await res.json();
-              metaCache.set(uri, md);
-              metas.push(md);
-            }
-          } catch {
-            metas.push({ name: `NFT #${liveIdx[j]}`, image: "/placeholder.svg" });
-          }
-        }
-
-      liveIdx.forEach((i, j) => {
-          // j is the index in liveIdx, which matches the index in listings array
-          const [seller, unitPrice] = listings[j];
-          items.push({
-            collection: col,
-            id: i,
-            seller,
-            price: unitPrice,
-            metadata: metas[j],
-          });
-        });
-      })
-  );
-
-    console.log(`🎉 Fetch completed! Found ${items.length} listed NFTs:`, items);
-  setListedNFTs(items);
-  setFirstFetchDone(true);        // ✅ mark the initial fetch complete
-    } finally {
-      inFlight.current = false;
-      setLoading(false);
-    }
-  }, 500); // 500ms debounce
-}, [publicClient, collections]);
-
-/* ─────────── trigger fetch whenever collections change ─────────── */
-useEffect(() => {
-  const collectionsKey = collections.join(',');
-  console.log('🔄 useEffect triggered - collections:', collections.length, 'inFlight:', inFlight.current, 'lastFetched:', lastFetchedCollections.current);
-  
-  if (collections.length === 0) {
-    setListedNFTs([]);
-    setLoading(false);
-    lastFetchedCollections.current = '';
-    return;
-  }
-  
-  // Only fetch if not already in flight and collections have actually changed
-  if (!inFlight.current && collectionsKey !== lastFetchedCollections.current) {
-    console.log('🚀 Starting fetchListings...');
-    lastFetchedCollections.current = collectionsKey;
-  fetchListings();
-  }
-}, [collections, fetchListings]);
+  /* listings - use hook */
+  const { listings: listedNFTs, loading, firstFetchDone, refetch: refetchListings } = useMarketplaceListings({
+    includePacks: true,
+    collections: collections.length > 0 ? collections : undefined,
+  });
 
 
 
@@ -372,310 +209,87 @@ async function buyNFT(
   id:         number,
   price:      bigint,
 ) {
-  /* 1️⃣ basic guards */
   if (!address) {
-    toast.error('Connect wallet first');
+    toast.error("Connect wallet first");
     return;
   }
 
-  console.log('🛒 Starting buyNFT:', { collection, id, price, address });
-  
-  // Check the listing details first
-  try {
-    const listing = await publicClient.readContract({
-      address: CONTRACTS.marketplace,
-      abi: CONTRACTS.marketplaceAbi,
-      functionName: "listings1155",
-      args: [collection, BigInt(id)],
-    });
-    console.log('📋 Current listing:', listing);
-    
-    const [seller, unitPrice] = listing as [string, bigint];
-    console.log('📋 Listing details:', { seller, unitPrice });
-    
-    // For ERC1155, we assume remaining is always 1 (single item listing)
-    const remaining = 1n;
-    
-    if (unitPrice !== price) {
-      toast.error(`Price mismatch: expected ${unitPrice}, got ${price}`);
-      return;
-    }
-  } catch (err) {
-    console.log('❌ Failed to fetch listing details:', err);
-    toast.error('Failed to fetch listing details');
-    return;
-  }
-  
-  // Skip collection validation since we already validated during listing
-  // The marketplace will handle validation during the transaction
-  console.log('🔍 Skipping collection validation - already validated during listing');
-
-// wait until the wallet really switched
-const waitForChain = (target: number) =>
-  new Promise<void>((resolve, reject) => {
-    try {
-    const unwatch = watchAccount(wagmi, {
-      onChange(acct) {
-          if (!acct.isConnected) { 
-            unwatch(); 
-            reject(new Error("disconnected")); 
-            return;
-          }
-          if (acct.chainId === target) { 
-            unwatch(); 
-            resolve(); 
-          }
-      },
-    });
-    } catch (err) {
-      reject(new Error("Failed to watch account"));
-    }
-  });
-
-
+  // network
   if (chainId !== CHAIN_ID) {
     try {
-      await switchChainAsync({ chainId: CHAIN_ID }); // opens MetaMask
-      await waitForChain(CHAIN_ID);                  // ⏳ wait until switched
+      await switchChainAsync({ chainId: CHAIN_ID });
+      await waitForChain(CHAIN_ID);
     } catch {
-      toast.error('Please switch to Base-Sepolia');
+      toast.error("Please switch to Base-Sepolia");
       return;
     }
   }
 
-  /* 3️⃣ dry-run to surface reverts */
-  try {
-    console.log('🔍 Simulating buy1155 transaction...');
-    
-    // Let's also check the exact parameters being passed
-    console.log('📊 Buy parameters:', {
-      nft: collection,
-      id: id,
-      amount: 1,
-      value: price,
-      buyer: address
-    });
-  
-  // Check buyer's ETH balance
-  try {
-    const buyerBalance = await publicClient.getBalance({ address: address as `0x${string}` });
-    console.log('💳 Buyer ETH balance:', buyerBalance);
-    
-    if (buyerBalance < price) {
-      toast.error('Insufficient ETH balance');
-      return;
-    }
-  } catch (err) {
-    console.log('❌ Failed to check buyer balance:', err);
-  }
-  
-  // Check if the marketplace is paused
-  try {
-    const isPaused = await publicClient.readContract({
-      address: CONTRACTS.marketplace,
-      abi: CONTRACTS.marketplaceAbi,
-      functionName: "paused",
-    });
-    console.log('⏸️ Marketplace paused:', isPaused);
-    
-    if (isPaused) {
-      toast.error('Marketplace is currently paused');
-      return;
-    }
-  } catch (err) {
-    console.log('❌ Failed to check if marketplace is paused:', err);
-  }
-  
-  // Check seller's balance and approval
+  // 1) single listing read
+  let seller: `0x${string}`;
+  let unitPrice: bigint;
   try {
     const listing = await publicClient.readContract({
-      address: CONTRACTS.marketplace,
-      abi: CONTRACTS.marketplaceAbi,
-      functionName: "listings1155",
-      args: [collection, BigInt(id)],
-    });
-    const [seller] = listing as [string, bigint];
-    
-    const sellerBalance = await publicClient.readContract({
-      address: collection as `0x${string}`,
-      abi: CONTRACTS.nft1155Abi,
-      functionName: "balanceOf",
-      args: [seller as `0x${string}`, BigInt(id)],
-    });
-    console.log('💰 Seller balance:', sellerBalance);
-    
-    const isApproved = await publicClient.readContract({
-      address: collection as `0x${string}`,
-      abi: CONTRACTS.nft1155Abi,
-      functionName: "isApprovedForAll",
-      args: [seller as `0x${string}`, CONTRACTS.marketplace],
-    });
-    console.log('✅ Seller approved marketplace:', isApproved);
-    
-    if (!isApproved) {
-      toast.error('Seller has not approved the marketplace');
-      return;
-    }
-  } catch (err) {
-    console.log('❌ Failed to check seller balance/approval:', err);
-  }
-  
-  // Check if the NFT collection has any custom restrictions
-  try {
-    // Try to read some common NFT contract functions to see if they exist
-    const collectionName = await publicClient.readContract({
-      address: collection as `0x${string}`,
-      abi: CONTRACTS.nft1155Abi,
-      functionName: "name",
-    });
-    console.log('🏷️ Collection name:', collectionName);
-    
-    // Note: supportsInterface not available in our custom ABI
-  } catch (err) {
-    console.log('❌ Failed to check collection details:', err);
-  }
-  
-  // Check if the NFT collection allows external transfers
-  try {
-    // Try to simulate a direct transfer from seller to buyer to see if it's allowed
-    console.log('🔄 Testing direct transfer from seller to buyer...');
-    
-    // Get the seller address from the listing
-    const listing = await publicClient.readContract({
-      address: CONTRACTS.marketplace,
-      abi: CONTRACTS.marketplaceAbi,
-      functionName: "listings1155",
-      args: [collection, BigInt(id)],
-    });
-    const [seller] = listing as [string, bigint];
-    
-    // Try to simulate a direct safeTransferFrom call
-    try {
-      await publicClient.simulateContract({
-        account: seller as `0x${string}`,
-        address: collection as `0x${string}`,
-        abi: CONTRACTS.nft1155Abi,
-        functionName: "safeTransferFrom",
-        args: [
-          seller as `0x${string}`,
-          address,
-          BigInt(id),
-          1n,
-          "0x" // empty data
-        ],
-      });
-      console.log('✅ Direct transfer simulation successful');
-    } catch (transferErr: any) {
-      console.log('❌ Direct transfer simulation failed:', transferErr);
-      console.log('🔍 Transfer error details:', {
-        message: transferErr?.message,
-        shortMessage: transferErr?.shortMessage,
-        data: transferErr?.data
-      });
-    }
-  } catch (err) {
-    console.log('❌ Failed to test direct transfer:', err);
-  }
-  
-  // Preflight checks before simulation
-  try {
-    console.log('🔍 Running preflight checks...');
-    
-    // 0) Get the seller from the listing
-    const [seller, unitPrice] = await publicClient.readContract({
       address: CONTRACTS.marketplace,
       abi: CONTRACTS.marketplaceAbi,
       functionName: "listings1155",
       args: [collection, BigInt(id)],
     }) as readonly [`0x${string}`, bigint];
-    
-    // For ERC1155, we assume remaining is always 1 (single item listing)
-    const remaining = 1n;
-    console.log('📋 Listing details:', { seller, unitPrice, remaining });
-    
-    // 1) Check if seller has approved the marketplace
-    const approved = await publicClient.readContract({
-      address: collection as `0x${string}`,
+
+    [seller, unitPrice] = listing;
+    if (!seller || seller.toLowerCase() === ZERO_ADDRESS) {
+      toast.error("Listing not found");
+      return;
+    }
+
+    if (unitPrice !== price) {
+      toast.error(`Price mismatch: expected ${formatEther(unitPrice)} ETH`);
+      return;
+    }
+  } catch (e) {
+    console.log("listing read failed", e);
+    toast.error("Failed to read listing");
+    return;
+  }
+
+  // 2) basic checks
+  const [approved, sellerBalance] = await Promise.all([
+    publicClient.readContract({
+      address: collection,
       abi: CONTRACTS.nft1155Abi,
       functionName: "isApprovedForAll",
       args: [seller, CONTRACTS.marketplace as `0x${string}`],
-    }) as boolean;
-    
-    console.log('🔐 Marketplace approval status:', approved);
-    
-    if (!approved) {
-      toast.error('Seller revoked marketplace approval. Ask the seller to re-approve the marketplace.');
-      return;
-    }
-    
-    // 2) Check if seller still has the token
-    const sellerBalance = await publicClient.readContract({
-      address: collection as `0x${string}`,
+    }) as Promise<boolean>,
+    publicClient.readContract({
+      address: collection,
       abi: CONTRACTS.nft1155Abi,
       functionName: "balanceOf",
       args: [seller, BigInt(id)],
-    }) as bigint;
-    
-    console.log('💰 Seller balance:', sellerBalance);
-    
-    if (sellerBalance < 1n) {
-      toast.error('Seller no longer holds this token.');
-      return;
-    }
-    
-    // 3) Check if there's enough remaining
-    if (remaining < 1n) {
-      toast.error('This item is no longer available for sale.');
-      return;
-    }
-    
-    // 4) Check if price matches
-    if (unitPrice !== price) {
-      toast.error(`Price mismatch: expected ${unitPrice}, got ${price}`);
-      return;
-    }
-    
-    console.log('✅ All preflight checks passed');
-    
-    // 5) Check if the token has operator filters that might block the marketplace
-    try {
-      console.log('🔍 Testing operator filter restrictions...');
-      
-      await publicClient.simulateContract({
-        account: CONTRACTS.marketplace as `0x${string}`,
-        address: collection as `0x${string}`,
-        abi: CONTRACTS.nft1155Abi,
-        functionName: 'safeTransferFrom',
-        args: [seller, address!, BigInt(id), 1n, '0x'],
-      });
-      console.log('✅ Operator filter check passed');
-      
-    } catch (operatorErr: any) {
-      console.log('❌ Operator filter check failed:', operatorErr);
-      toast.error('This token has transfer restrictions that block the marketplace. The seller needs to use a different listing method.');
-      return;
-    }
-    
-  } catch (preflightErr) {
-    console.log('❌ Preflight checks failed:', preflightErr);
-    toast.error('Failed to verify listing details');
+    }) as Promise<bigint>,
+  ]);
+
+  if (!approved) {
+    toast.error("Seller revoked marketplace approval");
     return;
   }
-  
-    // Assume ERC1155 for now - could be enhanced to detect token type
+
+  if (sellerBalance < 1n) {
+    toast.error("Seller no longer holds this token");
+    return;
+  }
+
+  // 3) simulate marketplace buy
+  try {
     await publicClient.simulateContract({
-      account:      address,
-      address:      CONTRACTS.marketplace,
-      abi:          CONTRACTS.marketplaceAbi,
-      functionName: 'buy1155',
-      args:         [collection, BigInt(id), 1n], // amount = 1 for ERC1155
-      value:        price,
+      account: address,
+      address: CONTRACTS.marketplace,
+      abi: CONTRACTS.marketplaceAbi,
+      functionName: "buy1155",
+      args: [collection, BigInt(id), 1n],
+      value: price,
     });
-  console.log('✅ Simulation successful');
   } catch (err: any) {
-    console.log('❌ Simulation failed:', err);
-    let reason = 'Transaction failed';
-    
+    let reason = err?.shortMessage || err?.message || "Transaction failed";
     try {
       if (err?.data?.data) {
         const decoded = decodeErrorResult({
@@ -683,92 +297,63 @@ const waitForChain = (target: number) =>
           data: err.data.data as `0x${string}`,
         });
         reason = decoded.errorName;
-      } else {
-        reason = err?.shortMessage || err?.message || 'Transaction failed';
       }
-    } catch (decodeErr) {
-      reason = err?.shortMessage || err?.message || 'Transaction failed';
-    }
-    
+    } catch {}
     toast.error(`Cannot buy: ${reason}`);
     return;
   }
 
-  /* 4️⃣ balance / gas sanity check */
+  // 4) gas + balance sanity
   const gasLimit = BigInt(await publicClient.estimateGas({
     account: address,
-    to:      CONTRACTS.marketplace,
-    data:    encodeFunctionData({
-               abi: CONTRACTS.marketplaceAbi,
-               functionName: 'buy1155',
-               args: [collection, BigInt(id), 1n], // amount = 1 for ERC1155
-             }),
-    value:   price,
+    to: CONTRACTS.marketplace,
+    data: encodeFunctionData({
+      abi: CONTRACTS.marketplaceAbi,
+      functionName: "buy1155",
+      args: [collection, BigInt(id), 1n],
+    }),
+    value: price,
   }));
   const gasPrice = BigInt(await publicClient.getGasPrice());
-  const needed   = price + (gasLimit * gasPrice);
-  const balance  = balanceData?.value ?? 0n;
+  const needed = price + (gasLimit * gasPrice);
+  const balance = balanceData?.value ?? 0n;
 
   if (balance < needed) {
     toast.error(
-      `Need ${formatEther(needed)} ETH, you have ${formatEther(balance)}`,
+      `Need ${formatEther(needed)} ETH, you have ${formatEther(balance)}`
     );
     return;
   }
 
-  /* 5️⃣ send the tx */
-  toast.loading('Buying NFT…');
+  // 5) send tx
+  toast.loading("Buying NFT…");
   try {
-    console.log('🔍 Sending buy1155 transaction with params:', {
-      collection,
-      id,
-      amount: 1n,
-      value: price,
-      marketplace: CONTRACTS.marketplace
-    });
-    
     const hash = await writeContractAsync({
-      address:      CONTRACTS.marketplace,
-      abi:          CONTRACTS.marketplaceAbi,
-      functionName: 'buy1155',
-      args:         [collection, BigInt(id), 1n], // amount = 1 for ERC1155
-      value:        price,
+      address: CONTRACTS.marketplace,
+      abi: CONTRACTS.marketplaceAbi,
+      functionName: "buy1155",
+      args: [collection, BigInt(id), 1n],
+      value: price,
     });
 
-    console.log('✅ Transaction submitted:', hash);
-
-    /* optimistic UI update */
-    setListedNFTs(prev =>
-      prev.filter(itm => itm.collection !== collection || itm.id !== id),
-    );
-
+    // Optimistic UI update - the hook will refetch and update state
     await publicClient.waitForTransactionReceipt({ hash });
-    await fetchListings();                   // re-sync
+    await refetchListings();
     toast.dismiss();
-    toast.success('NFT purchased!');
+    toast.success("NFT purchased!");
   } catch (err: any) {
-    console.error('❌ Buy transaction failed:', err);
     toast.dismiss();
-    
-    // Try to decode the error for better user feedback
-    let errorMessage = 'Buy failed';
+    let msg = err?.shortMessage || err?.message || "Buy failed";
     try {
       if (err?.data?.data) {
         const decoded = decodeErrorResult({
           abi: CONTRACTS.marketplaceAbi,
           data: err.data.data as `0x${string}`,
         });
-        errorMessage = `Transaction failed: ${decoded.errorName}`;
-        console.log('🔍 Decoded error:', decoded);
-      } else {
-        errorMessage = err?.shortMessage || err?.message || 'Buy failed';
+        msg = `Transaction failed: ${decoded.errorName}`;
       }
-    } catch (decodeErr) {
-      console.log('❌ Failed to decode error:', decodeErr);
-      errorMessage = err?.shortMessage || err?.message || 'Buy failed';
-    }
-    
-    toast.error(errorMessage);
+    } catch {}
+    toast.error(msg);
   }
 }
 /* ─────────────────────────────────────────────────────────── */
@@ -790,7 +375,7 @@ const waitForChain = (target: number) =>
       })
 
       await publicClient.waitForTransactionReceipt({ hash })
-      setListedNFTs((prev) => prev.filter((itm) => itm.collection !== collection || itm.id !== id))
+      await refetchListings()
       toast.dismiss()
       toast.success("Listing cancelled")
     } catch (err: any) {
@@ -848,15 +433,14 @@ if (!firstFetchDone || loading) return <FullPageLoader message="Loading…" />
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
             {listedNFTs.map((item, idx) => {
               const cardId = `${item.collection}-${item.id}-${idx}`
-              const isOwner = item.seller.toLowerCase() === address?.toLowerCase()
-              const isHovered = hoveredCard === cardId
+              const lowerAddr = address?.toLowerCase()
+              const isOwner = lowerAddr && item.seller.toLowerCase() === lowerAddr
+              const collectionAddr = item.collection as `0x${string}`
 
               return (
                 <div
                   key={cardId}
                   className="group relative"
-                  onMouseEnter={() => setHoveredCard(cardId)}
-                  onMouseLeave={() => setHoveredCard(null)}
                   style={{ animationDelay: `${idx * 0.1}s` }}
                 >
                   {/* Neon Glow Effect - Multiple Layers */}
@@ -982,7 +566,7 @@ if (!firstFetchDone || loading) return <FullPageLoader message="Loading…" />
                       {/* Action Button */}
                       {isOwner ? (
                         <Button
-                          onClick={() => cancelListing(item.collection, item.id)}
+                          onClick={() => cancelListing(collectionAddr, item.id)}
                           className="w-full bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 text-white font-semibold py-3 rounded-full transition-all duration-300 hover:scale-105 group/btn border border-red-500/50 hover:border-red-400/70"
                         >
                           <X className="w-4 h-4 mr-2" />
@@ -993,7 +577,7 @@ if (!firstFetchDone || loading) return <FullPageLoader message="Loading…" />
                         </Button>
                       ) : (
                         <Button
-                          onClick={() => buyNFT(item.collection, item.id, item.price)}
+                          onClick={() => buyNFT(collectionAddr, item.id, item.price)}
                           className="w-full bg-gradient-to-r from-purple-600 via-pink-600 to-blue-600 hover:from-purple-700 hover:via-pink-700 hover:to-blue-700 text-white font-semibold py-3 rounded-full transition-all duration-300 hover:scale-105 group/btn border border-purple-500/50 hover:border-purple-400/70"
                         >
                           <ShoppingCart className="w-4 h-4 mr-2" />
