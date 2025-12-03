@@ -253,16 +253,27 @@ const fetchListings = useCallback(async () => {
               args: [col as `0x${string}`, BigInt(tokenId)],
             }) as [string, bigint];
             
-            // Skip non-listed tokens immediately
-            if (listing[1] === 0n) continue;
+            const [seller, unitPrice] = listing;
+            const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+            
+            // Check if listing exists (seller is not zero address and price is not zero)
+            if (seller.toLowerCase() === ZERO_ADDRESS.toLowerCase() || unitPrice === 0n) {
+              // Not listed - skip silently for most tokens, but log first few for debugging
+              if (tokenId < 3) {
+                console.log(`🔍 Token ${tokenId} not listed: seller=${seller}, price=${unitPrice.toString()}`);
+              }
+              continue;
+            }
             
             liveIdx.push(tokenId);
             listings.push(listing);
-            console.log(`✅ Live listing for ${col} token ${tokenId}:`, listing);
-          } catch (error) {
-            console.log(`⚠️ Error checking listing for ${col} token ${tokenId}:`, error);
+            console.log(`✅ Live listing found for ${col} token ${tokenId}:`, { seller, price: unitPrice.toString() });
+          } catch (error: any) {
+            console.error(`❌ Error checking listing for ${col} token ${tokenId}:`, error?.message || error);
           }
         }
+        
+        console.log(`📊 Collection ${col}: checked ${check} tokens, found ${liveIdx.length} listings`);
 
         if (!liveIdx.length) return;
 
