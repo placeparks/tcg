@@ -58,7 +58,7 @@ export function useMarketplaceListings(options: UseMarketplaceListingsOptions = 
 
         if (total > 0n) {
           const count = Number(total);
-          const erc1155Addrs = await Promise.all(
+          const erc1155Addrs: (`0x${string}` | null)[] = await Promise.all(
             Array.from({ length: count }, (_, i) =>
               publicClient.readContract({
                 address: CONTRACTS.factoryERC1155 as `0x${string}`,
@@ -70,8 +70,8 @@ export function useMarketplaceListings(options: UseMarketplaceListingsOptions = 
           );
 
           erc1155Addrs
-            .filter((addr: string | null): addr is string => !!addr)
-            .forEach((addr: string) => collectionsList.push(addr));
+            .filter((addr: `0x${string}` | null): addr is `0x${string}` => !!addr)
+            .forEach((addr) => collectionsList.push(addr));
         }
       } catch (error) {
         console.error('Error fetching ERC1155 collections:', error);
@@ -87,7 +87,7 @@ export function useMarketplaceListings(options: UseMarketplaceListingsOptions = 
 
         if (total > 0n) {
           const count = Number(total);
-          const singleAddrs = await Promise.all(
+          const singleAddrs: (`0x${string}` | null)[] = await Promise.all(
             Array.from({ length: count }, (_, i) =>
               publicClient.readContract({
                 address: CONTRACTS.singleFactory as `0x${string}`,
@@ -99,8 +99,8 @@ export function useMarketplaceListings(options: UseMarketplaceListingsOptions = 
           );
 
           singleAddrs
-            .filter((addr: string | null): addr is string => !!addr)
-            .forEach((addr: string) => collectionsList.push(addr));
+            .filter((addr: `0x${string}` | null): addr is `0x${string}` => !!addr)
+            .forEach((addr) => collectionsList.push(addr));
         }
       } catch (error) {
         console.error('Error fetching Single factory collections:', error);
