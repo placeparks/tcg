@@ -89,9 +89,11 @@ function Inner() {
 
   // State for collections and metadata
   const [allCollections, setAllCollections] = useState<{address: string, type: 'erc1155' | 'single' | 'pack'}[][]>([]);
+  const [packDataMap, setPackDataMap] = useState<Record<string, { pack_image_uri?: string }>>({});
   const [physicalNftMetadata, setPhysicalNftMetadata] = useState<Record<string, any>>({});
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(false);
   const [metadataFetchStarted, setMetadataFetchStarted] = useState(false);
+  const [collectionsFetched, setCollectionsFetched] = useState(false);
 
   // Fetch all collections from both factories and pack collections from database
   useEffect(() => {
@@ -141,6 +143,7 @@ function Inner() {
       }
       
       // Fetch Pack collections from database
+      const packData: Record<string, { pack_image_uri?: string }> = {};
       try {
         const response = await fetch('/api/packs/active');
         if (response.ok) {
@@ -150,6 +153,12 @@ function Inner() {
             dbPacks.forEach((dbPack: any) => {
               if (dbPack.collection_address) {
                 allCollectionsData.push({address: dbPack.collection_address, type: 'pack'});
+                // Store pack_image_uri for this collection
+                if (dbPack.pack_image_uri) {
+                  packData[dbPack.collection_address.toLowerCase()] = {
+                    pack_image_uri: dbPack.pack_image_uri
+                  };
+                }
               }
             });
           }
@@ -163,22 +172,15 @@ function Inner() {
       console.log('🟣 Single NFT Collections:', allCollectionsData.filter(c => c.type === 'single'));
       console.log('📦 Pack Collections:', allCollectionsData.filter(c => c.type === 'pack'));
       setAllCollections([allCollectionsData]);
+      setPackDataMap(packData);
+      setCollectionsFetched(true);
     };
     
     fetchAllCollections();
   }, [erc1155Total, singleNftTotal, publicClient]);
 
   /* flags */
-  const loading = !ready || erc1155Loading || singleNftLoading || isLoadingMetadata;
-  
-  // Add a small delay to prevent flash of "No Collections Yet"
-  const [showContent, setShowContent] = useState(false);
-  useEffect(() => {
-    if (!loading) {
-      const timer = setTimeout(() => setShowContent(true), 300);
-      return () => clearTimeout(timer);
-    }
-  }, [loading]);
+  const loading = !ready || erc1155Loading || singleNftLoading || isLoadingMetadata || !collectionsFetched;
   
 
   /* process collections data */
@@ -413,7 +415,7 @@ function Inner() {
   }, [keyword, processedPhysicalNft]);
 
   /* early returns */
-  if (loading || !showContent) return <FullPageLoader message="Loading collections…" />;
+  if (loading) return <FullPageLoader message="Loading collections…" />;
   if (!CONTRACTS.factoryERC1155 && !CONTRACTS.singleFactory) 
     return <Empty>Contract addresses not configured. Please set factory environment variables.</Empty>;
   if (erc1155Error || singleNftError) 
@@ -438,15 +440,23 @@ function Inner() {
         
         {filteredCollections.length > 0 && (
           <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {filteredCollections.map((col, i) => (
-              <div key={col.address}>
-                <CollectionCard
-                  address={col.address}
-                  preview={CONTRACTS.collectionPreview(col.address)}
-                  type={col.type as 'erc1155' | 'single' | 'pack'}
-                />
-              </div>
-            ))}
+            {filteredCollections.map((col, i) => {
+              // For pack collections, use pack_image_uri from database if available
+              const packData = packDataMap[col.address.toLowerCase()];
+              const preview = col.type === 'pack' && packData?.pack_image_uri 
+                ? packData.pack_image_uri 
+                : CONTRACTS.collectionPreview(col.address);
+              
+              return (
+                <div key={col.address}>
+                  <CollectionCard
+                    address={col.address}
+                    preview={preview}
+                    type={col.type as 'erc1155' | 'single' | 'pack'}
+                  />
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
