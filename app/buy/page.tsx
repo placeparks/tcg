@@ -320,9 +320,10 @@ const fetchListings = useCallback(async () => {
         }
 
       liveIdx.forEach((i, j) => {
-          const [seller, unitPrice] = listings[i];
-        items.push({
-          collection: col,
+          // j is the index in liveIdx, which matches the index in listings array
+          const [seller, unitPrice] = listings[j];
+          items.push({
+            collection: col,
             id: i,
             seller,
             price: unitPrice,
