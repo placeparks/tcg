@@ -69,6 +69,7 @@ const { switchChainAsync } = useSwitchChain();
 
   // State for collections
   const [collections, setCollections] = useState<string[]>([])
+  const packCollectionsRef = useRef<Set<string>>(new Set())
 
   // Fetch all collections by index when total count is available
   useEffect(() => {
@@ -76,6 +77,7 @@ const { switchChainAsync } = useSwitchChain();
     
     const fetchCollections = async () => {
       const collectionsList: string[] = [];
+      const packCollectionSet = new Set<string>();
       
       // Fetch from ERC1155 factory
       if (totalCollectionsERC1155) {
@@ -117,8 +119,31 @@ const { switchChainAsync } = useSwitchChain();
         }
       }
       
+      // Fetch Pack collections from database
+      try {
+        console.log('🔍 Fetching Pack collections from database...');
+        const response = await fetch('/api/packs/active');
+        if (response.ok) {
+          const dbPacks = await response.json();
+          if (Array.isArray(dbPacks)) {
+            dbPacks.forEach((dbPack: any) => {
+              if (dbPack.collection_address) {
+                const packAddr = dbPack.collection_address.toLowerCase();
+                collectionsList.push(dbPack.collection_address);
+                packCollectionSet.add(packAddr);
+                console.log('📦 Added pack collection:', dbPack.collection_address);
+              }
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching pack collections:', error);
+      }
+      
       console.log('🏭 Fetched All Collections:', collectionsList);
+      console.log('📦 Pack Collections:', Array.from(packCollectionSet));
       setCollections(collectionsList);
+      packCollectionsRef.current = packCollectionSet;
     };
     
     fetchCollections();
@@ -148,34 +173,51 @@ const fetchListings = useCallback(async () => {
   try {
     setLoading(true);
 
-    // 1) supplies - prefer totalMinted over maxSupply
+    // 1) supplies - prefer totalMinted over maxSupply, or cardCount for pack collections
     const supplies: bigint[] = [];
     for (const col of collections) {
       let supply = 0n;
+      const isPackCollection = packCollectionsRef.current.has(col.toLowerCase());
 
-      /* prefer totalMinted first */
-      try {
-        supply = await publicClient.readContract({
-          address: col as `0x${string}`,
-          abi: CONTRACTS.nft1155Abi,
-          functionName: "totalMinted",
-        }) as bigint;
-        console.log(`✅ totalMinted for ${col}:`, supply);
-      } catch {
-        console.log(`⚠️ totalMinted not available for ${col}, trying maxSupply...`);
-      }
-
-      /* fall back to maxSupply if totalMinted failed */
-      if (supply === 0n) {
+      if (isPackCollection) {
+        /* For pack collections, use cardCount */
+        try {
+          supply = await publicClient.readContract({
+            address: col as `0x${string}`,
+            abi: CONTRACTS.packCollectionAbi,
+            functionName: "cardCount",
+          }) as bigint;
+          console.log(`✅ cardCount for pack collection ${col}:`, supply);
+          // Add 1 to include token ID 0 (the pack itself)
+          supply = supply + 1n;
+        } catch {
+          console.log(`⚠️ cardCount not available for pack collection ${col}`);
+        }
+      } else {
+        /* prefer totalMinted first */
         try {
           supply = await publicClient.readContract({
             address: col as `0x${string}`,
             abi: CONTRACTS.nft1155Abi,
-            functionName: "maxSupply",
+            functionName: "totalMinted",
           }) as bigint;
-          console.log(`✅ maxSupply fallback for ${col}:`, supply);
+          console.log(`✅ totalMinted for ${col}:`, supply);
         } catch {
-          console.log(`⚠️ maxSupply also failed for ${col}`);
+          console.log(`⚠️ totalMinted not available for ${col}, trying maxSupply...`);
+        }
+
+        /* fall back to maxSupply if totalMinted failed */
+        if (supply === 0n) {
+          try {
+            supply = await publicClient.readContract({
+              address: col as `0x${string}`,
+              abi: CONTRACTS.nft1155Abi,
+              functionName: "maxSupply",
+            }) as bigint;
+            console.log(`✅ maxSupply fallback for ${col}:`, supply);
+          } catch {
+            console.log(`⚠️ maxSupply also failed for ${col}`);
+          }
         }
       }
 
@@ -225,11 +267,12 @@ const fetchListings = useCallback(async () => {
         if (!liveIdx.length) return;
 
       const tokenUris: string[] = [];
+      const isPackCollection = packCollectionsRef.current.has(col.toLowerCase());
       for (const i of liveIdx) {
         try {
           const uri = await publicClient.readContract({
               address: col as `0x${string}`,
-            abi: CONTRACTS.nft1155Abi,
+            abi: isPackCollection ? CONTRACTS.packCollectionAbi : CONTRACTS.nft1155Abi,
             functionName: "uri",
             args: [BigInt(i)],
           }) as string;
@@ -640,7 +683,7 @@ const waitForChain = (target: number) =>
   }
 
   /* 4️⃣ balance / gas sanity check */
-  const gasLimit = await publicClient.estimateGas({
+  const gasLimit = BigInt(await publicClient.estimateGas({
     account: address,
     to:      CONTRACTS.marketplace,
     data:    encodeFunctionData({
@@ -649,9 +692,9 @@ const waitForChain = (target: number) =>
                args: [collection, BigInt(id), 1n], // amount = 1 for ERC1155
              }),
     value:   price,
-  });
-  const gasPrice = await publicClient.getGasPrice();
-  const needed   = price + gasLimit * gasPrice;
+  }));
+  const gasPrice = BigInt(await publicClient.getGasPrice());
+  const needed   = price + (gasLimit * gasPrice);
   const balance  = balanceData?.value ?? 0n;
 
   if (balance < needed) {
