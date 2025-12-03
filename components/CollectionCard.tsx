@@ -19,10 +19,25 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
   const [imageLoaded, setImageLoaded] = useState(false)
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
 
+  // For pack collections, prioritize preview (pack_image_uri from database) over contract URI
+  const effectiveImageUri = useMemo(() => {
+    if (type === 'pack' && preview && (preview.startsWith('http://') || preview.startsWith('https://') || preview.startsWith('ipfs://'))) {
+      // preview is pack_image_uri from database (HTTP or IPFS URL), use it directly
+      return preview;
+    }
+    return imageUri;
+  }, [type, preview, imageUri]);
+
   useEffect(() => {
     let mounted = true
     ;(async () => {
-      if (!imageUri) {
+      // For pack collections with direct HTTP URL in preview, use it directly
+      if (type === 'pack' && preview && (preview.startsWith('http://') || preview.startsWith('https://'))) {
+        if (mounted) setResolvedSrc(preview);
+        return;
+      }
+      
+      if (!effectiveImageUri) {
         if (mounted) setResolvedSrc(null)
         return
       }
@@ -30,7 +45,7 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
       try {
         // Use server-side API route to avoid CORS issues
         const response = await fetch(
-          `/api/ipfs-metadata?src=${encodeURIComponent(imageUri)}&tokenId=${tokenId.toString()}`
+          `/api/ipfs-metadata?src=${encodeURIComponent(effectiveImageUri)}&tokenId=${tokenId.toString()}`
         )
         
         if (response.ok) {
@@ -46,7 +61,7 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
       }
     })()
     return () => { mounted = false }
-  }, [imageUri, tokenId])
+  }, [effectiveImageUri, tokenId, type, preview])
 
   const fallback = useMemo(() => preview || "/cardifyN.png", [preview])
 
