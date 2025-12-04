@@ -327,7 +327,7 @@ export default function AlchemyNFTCard({ nft }: Props) {
                                  Cancel
                              </Button>
                          ) : canBuy ? (
-                             <Button onClick={buy} variant={"primary" as any} glow className="!px-4 !py-1.5 text-xs">
+                             <Button onClick={buy} variant="primary" glow className="!px-4 !py-1.5 text-xs">
                                  Buy Now
                              </Button>
                          ) : (
