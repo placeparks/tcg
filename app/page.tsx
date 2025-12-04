@@ -2,7 +2,6 @@
 import React, { useEffect } from 'react';
 import Hero from '@/components/Hero';
 import CollectionShowcase from '@/components/CollectionShowcase';
-import Marketplace from '@/components/Marketplace';
 import LoreSection from '@/components/LoreSection';
 import ChatBot from '@/components/ChatBot';
 
