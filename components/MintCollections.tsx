@@ -506,27 +506,32 @@ export default function MintCollections() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="text-center mb-12">
-        <h2 className="text-4xl font-bold bg-gradient-to-r from-purple-400 to-pink-600 bg-clip-text text-transparent mb-4">
+    <div className="w-full">
+      <div className="text-center mb-10">
+        <h2 className="text-5xl md:text-6xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-neon-pink via-neon-purple to-neon-pink mb-4 uppercase tracking-tight" style={{
+          backgroundSize: '200% auto',
+          animation: 'text-shimmer 3s ease-in-out infinite'
+        }}>
           Mint Now
         </h2>
-        <p className="text-gray-400 max-w-2xl mx-auto">
+        <p className="text-gray-400 text-lg max-w-2xl mx-auto font-sans">
           Explore and mint from our curated collection of unique NFTs. Each collection offers exclusive digital assets with unique properties.
         </p>
       </div>
 
-      <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 max-w-7xl mx-auto">
+      <div className="flex gap-6 overflow-x-auto pb-4 scrollbar-hide" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
         {/* Display Packs */}
         {packs.length > 0 && packs.map((pack) => (
-          <PackCard key={pack.packAddress} pack={pack} />
+          <div key={pack.packAddress} className="flex-shrink-0 w-[320px]">
+            <PackCard pack={pack} />
+          </div>
         ))}
         
         {/* Display Regular Collections */}
         {collections.length > 0 && collections.map((collection) => (
+          <div key={collection.collectionAddress} className="flex-shrink-0 w-[320px]">
           <Card 
-            key={collection.collectionAddress} 
-            className="overflow-hidden bg-gradient-to-b from-gray-900 to-black border border-gray-800 hover:border-purple-500 transition-all duration-300"
+            className="overflow-hidden bg-gradient-to-br from-gray-900/95 to-black/95 backdrop-blur-xl border border-white/10 hover:border-neon-purple/50 transition-all duration-300 h-full"
           >
             {/* Image placeholder - you'll need to implement proper image loading */}
             <div className="relative h-48 bg-gradient-to-r from-purple-500/20 to-pink-500/20">
@@ -591,12 +596,13 @@ export default function MintCollections() {
               )}
             </div>
           </Card>
+          </div>
         ))}
         
         {/* Show message if no packs or collections */}
         {packs.length === 0 && collections.length === 0 && !isLoadingCollections && !isLoadingPacks && (
-          <div className="col-span-full text-center py-12">
-            <p className="text-gray-400 text-lg">No packs or collections available yet.</p>
+          <div className="w-full text-center py-12">
+            <p className="text-gray-400 text-lg font-sans">No packs or collections available yet.</p>
           </div>
         )}
       </div>
