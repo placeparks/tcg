@@ -6,57 +6,65 @@ import {
   useWriteContract,
   useReadContract,
   useChainId,
+  usePublicClient,
 } from "wagmi";
 import { formatEther, decodeErrorResult } from "viem";
-import Image    from "next/image";
-import Link     from "next/link";
-import toast    from "react-hot-toast";
+import Link from "next/link";
+import toast from "react-hot-toast";
 import {
   Sparkles,
    ShoppingCart,
    Loader2,
   X,
-  RefreshCw
+  RefreshCw,
+  Eye,
+  RotateCcw,
+  Zap,
+  Shield,
+  Activity,
+  Box,
+  Share2,
+  ExternalLink
 } from "lucide-react";
 
 import { CONTRACTS } from "@/lib/contract";
-import { Badge }     from "@/components/ui/badge";
 import { AlchemyNFT, getBestImageUrl, preferGateway } from "@/lib/alchemy";
-import { usePublicClient } from "wagmi";
+import TiltCard from "@/components/ui/TiltCard";
+import {Button} from "@/components/ui/button";
 
 interface Props {
   nft: AlchemyNFT;
 }
 
 export default function AlchemyNFTCard({ nft }: Props) {
-  /* wallet hooks */
+  /* -------------------------------------------------------------------------- */
+  /*                                 LOGIC & HOOKS                              */
+  /* -------------------------------------------------------------------------- */
+  
   const { address } = useAccount();
   const { writeContractAsync } = useWriteContract();
   const chainId = useChainId();
   const publicClient = usePublicClient({ chainId: 84532 });
   
   // Force Base Sepolia chain for marketplace reads
-  const EXPECTED_CHAIN_ID = 84532; // Base Sepolia
-  console.log("🔗 Dashboard chainId =", chainId, "expected =", EXPECTED_CHAIN_ID);
+  const EXPECTED_CHAIN_ID = 84532; 
 
   /* state */
   const [load, setLoad] = useState(true);
   const [imgError, setImgError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resolvedImageUrl, setResolvedImageUrl] = useState<string | null>(null);
+  const [isFlipped, setIsFlipped] = useState(false);
 
   /* get image from Alchemy data */
   const rawUrl = getBestImageUrl(nft);
-  
-  // Check if rawUrl is a JSON metadata file (needs to be fetched and parsed)
   const isJsonUrl = rawUrl?.endsWith('.json') || 
     (rawUrl && !rawUrl.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|jfif)$/i) && 
      (rawUrl.includes('metadata') || rawUrl.includes('/json')));
   
-  // If we have a URL that might be JSON or no URL at all, try to fetch metadata
+  // Image resolution logic
   useEffect(() => {
     const fetchImageFromMetadata = async () => {
-      // If we already have a valid image URL (not JSON), use it
       if (rawUrl && !rawUrl.endsWith('.json') && !isJsonUrl) {
         const optimizedUrl = preferGateway(rawUrl);
         const finalUrl = optimizedUrl && (optimizedUrl.includes('/ipfs/') || optimizedUrl.startsWith('ipfs://'))
@@ -66,120 +74,61 @@ export default function AlchemyNFTCard({ nft }: Props) {
         return;
       }
 
-      // Try to get tokenUri and fetch metadata
       let tokenUri: string | null = null;
       if (nft.raw?.tokenUri) {
-        tokenUri = typeof nft.raw.tokenUri === 'string' 
-          ? nft.raw.tokenUri 
-          : (nft.raw.tokenUri as any)?.raw || (nft.raw.tokenUri as any)?.gateway || null;
+        tokenUri = typeof nft.raw.tokenUri === 'string' ? nft.raw.tokenUri : (nft.raw.tokenUri as any)?.raw || (nft.raw.tokenUri as any)?.gateway || null;
       } else if (nft.tokenUri) {
-        tokenUri = typeof nft.tokenUri === 'string'
-          ? nft.tokenUri
-          : (nft.tokenUri as any)?.raw || (nft.tokenUri as any)?.gateway || null;
+        tokenUri = typeof nft.tokenUri === 'string' ? nft.tokenUri : (nft.tokenUri as any)?.raw || (nft.tokenUri as any)?.gateway || null;
       }
 
       if (!tokenUri) {
-        // Fallback: if rawUrl is JSON, try fetching it
-        if (rawUrl && isJsonUrl) {
-          tokenUri = rawUrl;
-        } else if (publicClient && nft.contract.address && nft.tokenId) {
-          // Last resort: fetch tokenUri directly from contract (for ERC1155)
+        if (rawUrl && isJsonUrl) tokenUri = rawUrl;
+        else if (publicClient && nft.contract.address && nft.tokenId) {
           try {
-            console.log('🔍 Fetching tokenUri directly from contract:', {
-              contract: nft.contract.address,
-              tokenId: nft.tokenId,
-            });
-            // First try uri(tokenId)
             let contractUri = await publicClient.readContract({
               address: nft.contract.address as `0x${string}`,
               abi: CONTRACTS.nft1155Abi,
               functionName: 'uri',
               args: [BigInt(nft.tokenId)],
-            }) as string;
+            } as any) as string;
             
-            // If uri returns empty, try reading baseUri directly
             if (!contractUri || contractUri.trim() === '') {
-              console.log('⚠️ uri(tokenId) returned empty, trying baseUri...');
               contractUri = await publicClient.readContract({
                 address: nft.contract.address as `0x${string}`,
                 abi: CONTRACTS.nft1155Abi,
                 functionName: 'baseUri',
                 args: [],
-              }) as string;
-              console.log('✅ Fetched baseUri from contract:', contractUri);
+              } as any) as string;
             }
-            
-            if (contractUri && typeof contractUri === 'string' && contractUri.trim() !== '') {
-              tokenUri = contractUri;
-              console.log('✅ Using tokenUri from contract:', tokenUri);
-            }
+            if (contractUri) tokenUri = contractUri;
           } catch (error) {
-            console.error('❌ Failed to fetch tokenUri from contract:', error);
+            console.error('Failed to fetch URI from contract', error);
           }
-        }
-        
-        if (!tokenUri) {
-          console.warn('⚠️ No tokenUri found for NFT:', {
-            tokenId: nft.tokenId,
-            contract: nft.contract.address,
-            name: nft.name,
-            hasRawTokenUri: !!nft.raw?.tokenUri,
-            hasTokenUri: !!nft.tokenUri,
-            rawUrl,
-          });
-          setResolvedImageUrl(null);
-          return;
         }
       }
 
-      // Fetch metadata and extract image via server-side API
-      try {
-        // Use server-side API route to avoid CORS issues
+      if (tokenUri) {
+        try {
         const apiUrl = `/api/ipfs-metadata?src=${encodeURIComponent(tokenUri)}&tokenId=${nft.tokenId}`;
-        console.log('🔍 Fetching metadata from API:', apiUrl);
-        
         const response = await fetch(apiUrl);
-        console.log('🔍 Metadata API response:', {
-          ok: response.ok,
-          status: response.status,
-          statusText: response.statusText
-        });
-        
         if (response.ok) {
           const data = await response.json();
-          console.log('🔍 Metadata API data:', data);
           const imageUrl = data.imageUrl;
-          
           if (imageUrl) {
-            // Route through proxy for caching
             const finalUrl = imageUrl.includes('/ipfs/') || imageUrl.startsWith('ipfs://')
               ? `/api/ipfs-image?src=${encodeURIComponent(imageUrl)}`
               : imageUrl;
             setResolvedImageUrl(finalUrl);
-            console.log('✅ Resolved image from metadata:', finalUrl);
-          } else {
-            console.warn('⚠️ No image found in metadata response:', { tokenUri, data });
-            setResolvedImageUrl(null);
+            }
           }
-        } else {
-          const errorText = await response.text();
-          console.error('❌ Failed to fetch metadata:', {
-            status: response.status,
-            statusText: response.statusText,
-            error: errorText
-          });
-          setResolvedImageUrl(null);
+        } catch (error) {
+          console.error('Failed to resolve image', error);
         }
-      } catch (error) {
-        console.error('❌ Failed to resolve image from metadata:', error);
-        setResolvedImageUrl(null);
       }
     };
-
     fetchImageFromMetadata();
-  }, [nft, rawUrl, isJsonUrl]);
+  }, [nft, rawUrl, isJsonUrl, publicClient]);
 
-  // Use resolved image URL, or fallback to direct URL if available
   const imageUrl = resolvedImageUrl ?? (rawUrl && !isJsonUrl 
     ? (() => {
         const optimizedUrl = preferGateway(rawUrl);
@@ -189,411 +138,282 @@ export default function AlchemyNFTCard({ nft }: Props) {
       })()
     : null);
   
-  // Debug: log if no image URL is found (only after async resolution has completed)
-  useEffect(() => {
-    if (!imageUrl && resolvedImageUrl === null && rawUrl === null) {
-      // Only warn if we've tried to resolve and still don't have an image
-      console.warn('⚠️ No image URL found for NFT after resolution:', {
-        tokenId: nft.tokenId,
-        contract: nft.contract.address,
-        name: nft.name,
-        hasImage: !!nft.image,
-        hasRawMetadata: !!nft.raw?.metadata,
-        metadataImage: nft.raw?.metadata?.image,
-        tokenUri: nft.raw?.tokenUri || nft.tokenUri,
-        rawUrl,
-        resolvedImageUrl,
-        isJsonUrl
-      });
-    }
-  }, [imageUrl, resolvedImageUrl, rawUrl, nft]);
-  
-  // Debug image URL
-  useEffect(() => {
-    console.log('🔍 NFT Image Debug - Full NFT Data:', nft);
-    console.log('🔍 NFT Image Debug - Image Sources:', {
-      nftName: nft.name,
-      rawUrl,
-      imageUrl,
-      resolvedImageUrl,
-      isJsonUrl,
-      alchemyImage: nft.image,
-      metadataImage: nft.raw?.metadata?.image,
-      tokenUri: nft.raw?.tokenUri,
-      topLevelTokenUri: nft.tokenUri,
-      hasImage: 'image' in nft,
-      imageKeys: nft.image ? Object.keys(nft.image) : 'no image',
-      metadataKeys: nft.raw?.metadata ? Object.keys(nft.raw.metadata) : 'no metadata'
-    });
-    console.log("🖼 resolved imageUrl =", imageUrl);
-    console.log("🔍 preferGateway test:", rawUrl ? preferGateway(rawUrl) : 'no rawUrl');
-  }, [nft, imageUrl, rawUrl, resolvedImageUrl, isJsonUrl]);
-
-  /* listing info - determine token type and use correct function */
-  // Force ERC1155 for NFTs from our factories since our marketplace only supports ERC1155
-  const isERC1155 = true; // Always treat as ERC1155 since our marketplace only supports ERC1155
-  const listingFunctionName = "listings1155";
-  
+  /* listing info */
   const { data: listing, refetch: refetchListing, isLoading: listingLoading, error: listingError } = useReadContract({
-    address:       CONTRACTS.marketplace,
-    abi:           CONTRACTS.marketplaceAbi,
-    functionName:  listingFunctionName,
-    args:          [nft.contract.address as `0x${string}`, BigInt(nft.tokenId)],
-    chainId:       EXPECTED_CHAIN_ID,           // 🔴 force Base-Sepolia
+    address: CONTRACTS.marketplace,
+    abi: CONTRACTS.marketplaceAbi,
+    functionName: "listings1155",
+    args: [nft.contract.address as `0x${string}`, BigInt(nft.tokenId)],
+    chainId: EXPECTED_CHAIN_ID,
     query: {
       enabled: !!nft?.contract?.address,
       staleTime: 0,
-      refetchOnMount: true,
       refetchOnWindowFocus: true,
-      refetchInterval: 5_000,                // poll every 5s for faster updates
-      retry: false, // Don't retry for unlisted NFTs - this is expected behavior
+      refetchInterval: 10000,
+      retry: false,
     },
   });
 
-  // Parse listing data with proper typing
   const ZERO = "0x0000000000000000000000000000000000000000";
   const tuple = listing as any;
-
   const listingData = tuple && !listingError
-    ? { seller: tuple[0] as `0x${string}`, price: tuple[1] as bigint, remaining: 1n } // Always ERC1155 format
+    ? { seller: tuple[0] as `0x${string}`, price: tuple[1] as bigint, remaining: 1n }
     : undefined;
 
-  // Separate "listed" from "listed by me"
-  const isListed = !!listingData && listingData.seller !== ZERO && listingData.price > 0n && listingData.remaining > 0n;
+  const isListed = !!listingData && listingData.seller !== ZERO && listingData.price > 0n;
   const isListedByYou = isListed && listingData!.seller.toLowerCase() === address?.toLowerCase();
 
-  // Enhanced debug logging for listing detection
-  console.log('🔍 Enhanced Listing Debug:', {
-    tokenId: nft.tokenId,
-    contractAddress: nft.contract.address,
-    address,
-    rawListing: listing,
-    tuple,
-    listingData,
-    isListed,
-    isListedByYou,
-    seller: listingData?.seller,
-    price: listingData?.price,
-    remaining: listingData?.remaining,
-    zeroAddress: ZERO,
-    sellerIsZero: listingData?.seller === ZERO,
-    priceIsZero: listingData?.price === 0n,
-    remainingIsZero: listingData?.remaining === 0n,
-    listingFunctionName,
-    isERC1155,
-    listingLoading,
-    listingError
-  });
+  // Since this component is often used in a "My NFTs" dashboard, we can sometimes assume ownership, 
+  // but if used in Marketplace, we check against address.
+  // For safety, let's assume if it's in "My NFTs" address matches contract check, or passed via props.
+  // Here we'll rely on the parent or context, but for "Buy" button visibility, we check if seller != user.
+  const canBuy = isListed && !isListedByYou;
 
-  // Check if current user owns this NFT
-  // Since this component is used in the dashboard, we assume the user owns the NFT
-  const isOwner = !!address;
-  
-  // Debug logging
-  console.log('🔍 AlchemyNFTCard Debug:', {
-    tokenId: nft.tokenId,
-    contractAddress: nft.contract.address,
-    address,
-    isOwner,
-    listingData,
-    isListed,
-    isListedByYou,
-    seller: listingData?.seller,
-    listingFunctionName,
-    marketplace: CONTRACTS.marketplace,
-    isERC1155,
-    rawListing: listing,
-    chainId,
-    expectedChainId: EXPECTED_CHAIN_ID,
-    chainMatch: chainId === EXPECTED_CHAIN_ID,
-    nameSources: {
-      nftName: nft.name,
-      metadataName: nft.raw?.metadata?.name,
-      contractName: nft.contract.name,
-      finalName: nft.name || nft.raw?.metadata?.name || nft.contract.name || `NFT #${nft.tokenId}`
-    }
-  });
-
-  /* refresh handler */
-  const handleRefresh = async () => {
+  /* actions */
+  const handleRefresh = async (e: MouseEvent) => {
+    e.stopPropagation();
     setRefreshing(true);
-    try {
-      await refetchListing();
-      toast.success("Listing status refreshed");
-    } catch (error) {
-      console.error('Failed to refresh listing:', error);
-      toast.error("Failed to refresh listing status");
-    } finally {
-      setRefreshing(false);
-    }
+    try { await refetchListing(); toast.success("Synced with chain"); } 
+    catch { toast.error("Sync failed"); } 
+    finally { setRefreshing(false); }
   };
 
-  /* buy handler */
   const buy = async (e: MouseEvent) => {
-    e.preventDefault();
     e.stopPropagation();
-
-    if (!address) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    if (!listingData) {
-      toast.error("This NFT is not for sale");
-      return;
-    }
-
+    if (!address) { toast.error("Connect wallet first"); return; }
+    if (!listingData) return;
     try {
-      // Always use ERC1155 since our marketplace only supports ERC1155
       await writeContractAsync({
         address: CONTRACTS.marketplace,
-        abi:     CONTRACTS.marketplaceAbi,
+        abi: CONTRACTS.marketplaceAbi,
         functionName: "buy1155",
-        args:    [nft.contract.address as `0x${string}`, BigInt(nft.tokenId), 1n],
-        value:   listingData.price,
-      });
-
-      toast.success("NFT purchased successfully!");
-    } catch (error: any) {
-      console.error("Buy error:", error);
-      
-      try {
-        const decoded = decodeErrorResult({
-          abi: CONTRACTS.marketplaceAbi,
-          data: error.data,
-        });
-        toast.error(`Transaction failed: ${decoded.errorName}`);
-      } catch {
-        toast.error("Transaction failed. Please try again.");
-      }
+        args: [nft.contract.address as `0x${string}`, BigInt(nft.tokenId), 1n],
+        value: listingData.price,
+      } as any);
+      toast.success("Asset Acquired!");
+      refetchListing();
+    } catch (err: any) {
+      toast.error("Transaction Failed");
     }
   };
 
-  /* cancel listing handler */
   const cancelListing = async (e: MouseEvent) => {
-    e.preventDefault();
     e.stopPropagation();
-
-    if (!address) {
-      toast.error("Please connect your wallet");
-      return;
-    }
-
-    if (!listingData) {
-      toast.error("This NFT is not listed");
-      return;
-    }
-
+    if (!address) return;
     try {
-      // Always use ERC1155 since our marketplace only supports ERC1155
       await writeContractAsync({
         address: CONTRACTS.marketplace,
-        abi:     CONTRACTS.marketplaceAbi,
+        abi: CONTRACTS.marketplaceAbi,
         functionName: "cancelListing1155",
-        args:    [nft.contract.address as `0x${string}`, BigInt(nft.tokenId)],
-      });
-
-      toast.success("Listing cancelled successfully!");
-    } catch (error: any) {
-      console.error("Cancel listing error:", error);
-      
-      try {
-        const decoded = decodeErrorResult({
-          abi: CONTRACTS.marketplaceAbi,
-          data: error.data,
-        });
-        toast.error(`Transaction failed: ${decoded.errorName}`);
-      } catch {
-        toast.error("Transaction failed. Please try again.");
-      }
+        args: [nft.contract.address as `0x${string}`, BigInt(nft.tokenId)],
+      } as any);
+      toast.success("Listing Removed");
+      refetchListing();
+    } catch (err: any) {
+      toast.error("Cancellation Failed");
     }
   };
 
-  const fallback = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMzMzIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJBcmlhbCIgZm9udC1zaXplPSIyMCIgZmlsbD0iI2ZmZiIgdGV4dC1hbmNob3I9Im1pZGRsZSIgZHk9Ii4zZW0iPk5GVCBJbWFnZTwvdGV4dD48L3N2Zz4=";
+  // Extract attributes for back of card
+  const attributes = (nft.raw?.metadata?.attributes || []) as Array<{ trait_type: string; value: string }>;
+
+  // Fallback image
+  const fallback = "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAwIiBoZWlnaHQ9IjQwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMDkwNTE4Ii8+PHBhdGggZD0iTTEwMCAxMDBMMzAwIDMwME0zMDAgMTAwTTEwMCAzMDAiIHN0cm9rZT0iIzMzMyIgc3Ryb2tlLXdpZHRoPSIyIi8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtZmFtaWx5PSJtb25vc3BhY2UiIGZvbnQtc2l6ZT0iMTQiIGZpbGw9IiM2NjYiIHRleHQtYW5jaG9yPSJtaWRkbGUiPkRPV05MT0FEIEZBSUxFRDwvdGV4dD48L3N2Zz4=";
+
+  /* -------------------------------------------------------------------------- */
+  /*                                    RENDER                                  */
+  /* -------------------------------------------------------------------------- */
 
   return (
-    <div className="group relative bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-white/20 hover:border-white/40 group-hover:scale-[1.02] group-hover:shadow-2xl group-hover:shadow-purple-500/20">
-      {/* Image Container */}
-      <div className="relative aspect-square overflow-hidden">
-        {/* Loading State - show when load is true OR when imageUrl is still being resolved */}
-        {(load || !imageUrl) ? (
-          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
-            <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center animate-spin">
-              <Sparkles className="w-4 h-4 text-white" />
-            </div>
-          </div>
-        ) : imgError ? (
-          <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-orange-500/20 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-8 h-8 bg-gradient-to-r from-red-500 to-orange-500 rounded-full flex items-center justify-center mx-auto mb-2">
-                <span className="text-white text-xs">!</span>
-              </div>
-              <p className="text-xs text-red-400">Image Error</p>
-            </div>
-          </div>
-        ) : null}
+    <TiltCard className="h-[480px] w-full" glowColor={isListed ? "rgba(176,38,255,0.4)" : "rgba(0,243,255,0.3)"}>
+      <div 
+        className={`relative w-full h-full transition-all duration-700 transform-style-3d ${isFlipped ? 'rotate-y-180' : ''}`}
+        onClick={() => !isFlipped && setIsFlipped(true)}
+      >
         
-        {imageUrl && (
-          <img
-            src={imageUrl}
-            alt={nft.name || "NFT"}
-            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${load || !imageUrl ? "opacity-0" : "opacity-100"}`}
-            onLoad={() => {
-              console.log('✅ Image loaded successfully:', imageUrl);
-              setLoad(false);
-              setImgError(false);
-            }}
-            onError={(e) => {
-              console.log('❌ Image failed to load:', imageUrl);
-              console.log('❌ Error event:', e);
-              console.log('🔄 Trying fallback image...');
-              (e.target as HTMLImageElement).src = fallback;
-              setLoad(false);
-              setImgError(true);
-            }}
-          />
-        )}
-        
-        {/* Hover Overlay */}
-        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">
-            <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 shadow-lg border border-white/30">
-              <Sparkles className="w-5 h-5 text-white" />
+        {/* ======================= FRONT FACE ======================= */}
+        <div className="absolute inset-0 backface-hidden bg-[#0a0a0f] border border-white/10 rounded-xl overflow-hidden flex flex-col group cursor-pointer">
+            
+            {/* --- Status Bar --- */}
+            <div className="absolute top-0 left-0 w-full z-20 flex justify-between p-3 pointer-events-none">
+                <div className="flex gap-2">
+                    {isListed ? (
+                        <div className="bg-neon-purple/90 backdrop-blur text-black text-[10px] font-bold px-2 py-0.5 rounded shadow-[0_0_10px_rgba(176,38,255,0.4)] flex items-center gap-1">
+                            <Activity className="w-3 h-3" /> LISTED
             </div>
+                    ) : (
+                        <div className="bg-gray-800/90 backdrop-blur text-gray-300 text-[10px] font-bold px-2 py-0.5 rounded border border-white/10 flex items-center gap-1">
+                            <Shield className="w-3 h-3" /> SECURE
           </div>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="p-6">
-        <div className="flex items-start justify-between mb-4">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-bold text-white text-xl mb-2 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-pink-400 group-hover:bg-clip-text transition-all duration-300 truncate">
-              {nft.name || nft.raw?.metadata?.name || nft.contract.name || `NFT #${nft.tokenId}`}
-            </h3>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-400 uppercase tracking-wider font-medium">
-                #{nft.tokenId}
-              </span>
-              <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-xs text-green-400 font-medium">Owned</span>
+                    )}
                 </div>
+                
+                {/* Refresh Button */}
                 <button
                   onClick={handleRefresh}
                   disabled={refreshing}
-                  className="p-1 hover:bg-white/10 rounded transition-colors duration-200 disabled:opacity-50"
-                  title="Refresh listing status"
+                    className="pointer-events-auto bg-black/50 backdrop-blur p-1.5 rounded-full hover:bg-white/10 text-white/70 hover:text-white transition-colors"
                 >
-                  <RefreshCw className={`w-3 h-3 text-gray-400 ${refreshing ? 'animate-spin' : ''}`} />
+                    <RefreshCw className={`w-3 h-3 ${refreshing ? 'animate-spin' : ''}`} />
                 </button>
               </div>
+
+            {/* --- Image Area --- */}
+            <div className="relative h-[280px] w-full bg-gray-900 overflow-hidden">
+                 {(load || !imageUrl) && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <Loader2 className="w-8 h-8 text-neon-blue animate-spin" />
+                    </div>
+                 )}
+                 
+                 <img
+                    src={imageUrl ?? fallback}
+                    alt={nft.name || 'NFT'}
+                    className={`w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 ${load ? 'opacity-0' : 'opacity-100'}`}
+                    onLoad={() => { setLoad(false); setImgError(false); }}
+                    onError={(e) => { (e.target as HTMLImageElement).src = fallback; setLoad(false); setImgError(true); }}
+                 />
+                 
+                 {/* Cyber Overlay Gradient */}
+                 <div className="absolute inset-0 bg-gradient-to-t from-[#0a0a0f] via-transparent to-transparent opacity-90" />
+                 
+                 {/* Floating Rarity (if available in attributes) */}
+                 {attributes.length > 0 && (
+                     <div className="absolute bottom-4 left-4">
+                         <div className="text-[10px] text-neon-blue font-mono tracking-widest uppercase mb-0.5">TYPE</div>
+                         <div className="text-white font-display font-bold tracking-wide">
+                             {attributes.find(a => a.trait_type === 'Rarity')?.value || 'Standard'}
+                         </div>
+                     </div>
+                 )}
+            </div>
+
+            {/* --- Info Area --- */}
+            <div className="flex-1 p-4 flex flex-col justify-between relative">
+                 {/* Tech decoration */}
+                 <div className="absolute top-0 right-0 w-16 h-[1px] bg-gradient-to-l from-white/20 to-transparent" />
+
+                 <div>
+                     <div className="flex justify-between items-start mb-1">
+                         <h3 className="text-white font-display font-bold text-lg leading-tight truncate pr-2 group-hover:text-neon-blue transition-colors">
+                             {nft.name || `Asset #${nft.tokenId}`}
+                         </h3>
+                         <span className="text-xs font-mono text-gray-500">#{nft.tokenId}</span>
+                     </div>
+                     <p className="text-gray-500 text-xs line-clamp-2 min-h-[2.5em] font-sans">
+                         {nft.description || "No description data available in system."}
+                     </p>
+                 </div>
+
+                 {/* Price / Action Row */}
+                 <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+                     {listingLoading ? (
+                         <div className="text-xs text-gray-500 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin"/> Syncing...</div>
+                     ) : isListed ? (
+                         <div className="flex flex-col">
+                             <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Current Price</span>
+                             <span className="text-neon-purple font-mono font-bold text-lg">{formatEther(listingData!.price)} ETH</span>
+                         </div>
+                     ) : (
+                         <div className="flex flex-col">
+                            <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Status</span>
+                            <span className="text-gray-300 font-mono text-sm">Not Listed</span>
+                         </div>
+                     )}
+
+                     <div onClick={(e) => e.stopPropagation()}>
+                         {isListedByYou ? (
+                             <Button onClick={cancelListing} variant="outline" className="!px-3 !py-1.5 text-xs border-red-500/50 text-red-400 hover:bg-red-500/10">
+                                 Cancel
+                             </Button>
+                         ) : canBuy ? (
+                             <Button onClick={buy} variant="primary" glow className="!px-4 !py-1.5 text-xs">
+                                 Buy Now
+                             </Button>
+                         ) : (
+                             !isListed && (
+                                <Link href={`/list/${nft.contract.address}/${nft.tokenId}`}>
+                                    <Button variant="secondary" className="!px-4 !py-1.5 text-xs">
+                                        List Item
+                                    </Button>
+                                </Link>
+                             )
+                         )}
             </div>
           </div>
         </div>
 
-        {/* Price and Actions */}
-        <div className="flex items-center justify-between pt-4 border-t border-white/10">
-          {listingLoading ? (
-            <div className="flex items-center gap-2 text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span className="text-sm">Loading listing status...</span>
-            </div>
-          ) : listingError ? (
-            // Check if it's a "not found" error (expected for unlisted NFTs) vs a real error
-            listingError.message?.includes('not found') || 
-            listingError.message?.includes('execution reverted') ||
-            listingError.message?.includes('call exception') ? (
-              <div className="flex items-center gap-2 text-gray-400">
-                <span className="text-sm">Not listed</span>
-                <button
-                  onClick={handleRefresh}
-                  className="text-xs bg-gray-500/20 hover:bg-gray-500/30 px-2 py-1 rounded transition-colors"
-                  title="Refresh listing status"
-                >
-                  Refresh
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-red-400">
-                <span className="text-sm">Error loading listing</span>
-                <button
-                  onClick={handleRefresh}
-                  className="text-xs bg-red-500/20 hover:bg-red-500/30 px-2 py-1 rounded transition-colors"
-                >
-                  Retry
-                </button>
-              </div>
-            )
-          ) : isOwner ? (
-            // Owner's view - three states: listed by you, listed by someone else, not listed
-            isListedByYou ? (
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-white">
-                  {formatEther(listingData!.price)} ETH
-                </span>
-                <button
-                  onClick={cancelListing}
-                  className="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-3 py-1.5 rounded-md text-sm font-medium transition-all duration-200 flex items-center gap-1.5 hover:shadow-lg hover:shadow-red-500/25"
-                >
-                  <X className="w-3 h-3" />
-                  Cancel
-                </button>
-              </div>
-            ) : isListed ? (
-              <div className="flex items-center gap-2 text-yellow-400">
-                <span className="text-sm">Already listed (not by this wallet)</span>
-                <span className="text-white font-bold">{formatEther(listingData!.price)} ETH</span>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-400">Not listed</span>
-                <Link
-                  href={`/list/${nft.contract.address}/${nft.tokenId}`}
-                  className="bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  List
-                </Link>
-              </div>
-            )
-          ) : (
-            // Non-owner's view
-            isListed ? (
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold text-white">
-                  {formatEther(listingData!.price)} ETH
-                </span>
-                <button
-                  onClick={buy}
-                  className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center gap-2"
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  Buy Now
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-sm text-gray-400">
-                <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                  <Sparkles className="w-3 h-3 text-white" />
+            {/* View Specs Hint */}
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                <div className="bg-black/80 backdrop-blur border border-white/20 px-3 py-1.5 rounded-full flex items-center gap-2 text-xs text-white font-bold tracking-wider">
+                    <Eye className="w-3 h-3 text-neon-blue" /> VIEW SPECS
                 </div>
-                <span>Not for sale</span>
+            </div>
               </div>
-            )
-          )}
-          
-          <div className="text-xs text-gray-500 font-mono bg-white/10 backdrop-blur-sm px-2 py-1 rounded border border-white/20">
-            {nft.contract.address.slice(0, 6)}...{nft.contract.address.slice(-4)}
+
+
+        {/* ======================= BACK FACE ======================= */}
+        <div className="absolute inset-0 backface-hidden rotate-y-180 bg-[#08080c] border border-neon-blue/30 rounded-xl overflow-hidden p-6 flex flex-col shadow-[inset_0_0_30px_rgba(0,0,0,0.8)]">
+            
+            {/* Background Grid */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(0,243,255,0.03)_1px,transparent_1px),linear-gradient(90deg,rgba(0,243,255,0.03)_1px,transparent_1px)] bg-[size:20px_20px] pointer-events-none" />
+            
+            <div className="relative z-10 flex flex-col h-full">
+                {/* Header */}
+                <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
+                    <h3 className="font-display font-bold text-lg text-white tracking-widest uppercase">
+                        Sys<span className="text-neon-blue">.Data</span>
+                    </h3>
+                <button
+                        onClick={(e) => { e.stopPropagation(); setIsFlipped(false); }}
+                        className="text-gray-400 hover:text-white transition-colors p-1 hover:bg-white/10 rounded"
+                >
+                        <RotateCcw className="w-5 h-5" />
+                </button>
+              </div>
+
+                {/* Attributes Grid */}
+                <div className="flex-1 overflow-y-auto custom-scrollbar pr-1">
+                    {attributes.length > 0 ? (
+                        <div className="grid grid-cols-2 gap-2 mb-4">
+                            {attributes.map((attr, idx) => (
+                                <div key={idx} className="bg-white/5 border border-white/5 p-2 rounded hover:border-neon-blue/30 transition-colors">
+                                    <div className="text-[9px] text-neon-blue uppercase tracking-wider mb-0.5 truncate">{attr.trait_type}</div>
+                                    <div className="text-xs text-white font-mono truncate" title={attr.value}>{attr.value}</div>
+              </div>
+                            ))}
+              </div>
+            ) : (
+                        <div className="flex flex-col items-center justify-center h-32 text-gray-500 border border-dashed border-white/10 rounded mb-4">
+                            <Box className="w-8 h-8 mb-2 opacity-50" />
+                            <span className="text-xs font-mono uppercase">No Metadata</span>
+                        </div>
+                    )}
+              </div>
+
+                {/* Contract Info Footer */}
+                <div className="mt-auto pt-4 border-t border-white/10 space-y-3">
+                    <div className="flex justify-between items-center text-xs font-mono">
+                         <span className="text-gray-500">CONTRACT</span>
+                         <span className="text-neon-purple flex items-center gap-1 cursor-pointer hover:text-white transition-colors" title={nft.contract.address}>
+                            {nft.contract.address.slice(0, 6)}...{nft.contract.address.slice(-4)}
+                            <ExternalLink className="w-3 h-3" />
+                </span>
+                    </div>
+                    
+                    <div className="flex gap-2">
+                         <button className="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded py-2 text-[10px] font-bold text-gray-300 transition-colors flex items-center justify-center gap-2">
+                             <Share2 className="w-3 h-3" /> SHARE
+                         </button>
+                         <button className="flex-1 bg-neon-blue/10 hover:bg-neon-blue/20 border border-neon-blue/30 rounded py-2 text-[10px] font-bold text-neon-blue transition-colors flex items-center justify-center gap-2">
+                             <Activity className="w-3 h-3" /> HISTORY
+                </button>
+              </div>
           </div>
         </div>
       </div>
 
-      {/* Gradient glow effect */}
-      <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-blue-500/20 blur-xl" />
       </div>
-    </div>
+    </TiltCard>
   );
 }
