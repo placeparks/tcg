@@ -1,108 +1,109 @@
-"use client"
+"use client";
 
-import { Sparkles, Twitter, MessageCircle } from "lucide-react"
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import { Twitter, Github, Disc as Discord, Hexagon, MessageCircle, Sparkles } from 'lucide-react';
 
-export default function Footer() {
+const Footer: React.FC = () => {
   return (
-    <footer className="relative z-10 border-t border-white/10 bg-black/50 backdrop-blur-2xl">
-      <div className="container mx-auto px-6 py-16">
-        <div className="grid md:grid-cols-5 gap-8">
-          {/* Logo and About */}
-          <div className="md:col-span-2">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 rounded-xl flex items-center justify-center">
-                <Sparkles className="w-7 h-7 text-white" />
-              </div>
-              <div>
-                <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-blue-400 bg-clip-text text-transparent">
-                  TCG Meta
-                </span>
-                <div className="text-sm text-gray-400">NFT Marketplace</div>
-              </div>
+    <footer id="community" className="relative pt-8 pb-8 bg-black border-t border-white/10">
+      <div className="container mx-auto px-4">
+        <div className="grid md:grid-cols-4 gap-8 mb-8">
+            <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <Hexagon className="text-neon-purple w-8 h-8" strokeWidth={1.5} />
+                    <span className="font-display font-bold text-lg">TCG<span className="text-neon-blue">META</span></span>
+                </div>
+                <p className="text-gray-500 text-sm leading-relaxed">
+                    The premier destination for next-gen digital collectibles and gaming assets. Powered by Cardify.club.
+                </p>
             </div>
-            <p className="text-gray-400 text-lg leading-relaxed mb-6">
-              The premier destination for discovering, creating, and trading extraordinary card NFTs.
-            </p>
-            <div className="flex space-x-4">
-              <a
-                href="https://x.com/NickPlaysCrypto"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
-              >
-                <Twitter className="w-5 h-5 text-white" />
-              </a>
-              <a
-                href="https://discord.com/invite/nickplayscrypto"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-10 h-10 bg-white/10 backdrop-blur-xl border border-white/20 rounded-full flex items-center justify-center hover:bg-white/20 transition-colors cursor-pointer"
-              >
-                <MessageCircle className="w-5 h-5 text-white" />
-              </a>
+            
+            <div>
+                <h4 className="font-bold text-white mb-4 uppercase tracking-wider">Marketplace</h4>
+                <ul className="space-y-2 text-sm text-gray-500 font-mono">
+                    <li>
+                        <a
+                            href="/mint-now"
+                            className="hover:text-neon-blue transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                        >
+                            Explore
+                        </a>
+                    </li>
+                    <li>
+                        <a
+                            href="/collection"
+                            className="hover:text-neon-blue transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                        >
+                            Collections
+                        </a>
+                    </li>
+                </ul>
             </div>
-          </div>
 
-          {/* Link Columns */}
-          <div>
-            <h4 className="text-white font-bold text-lg mb-6">Marketplace</h4>
-            <ul className="space-y-3">
-              <li>
-                <a
-                  href="/mint-now"
-                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
-                >
-                  Explore
-                </a>
-              </li>
-              <li>
-                <a
-                  href="/collection"
-                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
-                >
-                  Collections
-                </a>
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h4 className="text-white font-bold text-lg mb-6">Company</h4>
-            <ul className="space-y-3">
-              <li>
-                <a
-                  href="#"
-                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
-                >
-                  About
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#"
-                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
-                >
-                  Privacy
-                </a>
-              </li>
-              <li>
-                <a
-                  href="#"
-                  className="text-gray-400 hover:text-white transition-colors hover:translate-x-1 transform duration-200 inline-block"
-                >
-                  Terms
-                </a>
-              </li>
-            </ul>
-          </div>
+            <div>
+                <h4 className="font-bold text-white mb-4 uppercase tracking-wider">Company</h4>
+                <ul className="space-y-2 text-sm text-gray-500 font-mono">
+                    <li>
+                        <a
+                            href="#"
+                            className="hover:text-neon-blue transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                        >
+                            About
+                        </a>
+                    </li>
+                    <li>
+                        <a
+                            href="#"
+                            className="hover:text-neon-blue transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                        >
+                            Privacy
+                        </a>
+                    </li>
+                    <li>
+                        <a
+                            href="#"
+                            className="hover:text-neon-blue transition-colors hover:translate-x-1 transform duration-200 inline-block"
+                        >
+                            Terms
+                        </a>
+                    </li>
+                </ul>
+            </div>
+
+            <div>
+                <h4 className="font-bold text-white mb-4 uppercase tracking-wider">Socials</h4>
+                <div className="flex gap-4">
+                    <a
+                        href="https://x.com/NickPlaysCrypto"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors"
+                    >
+                        <Twitter className="w-5 h-5 text-white" />
+                    </a>
+                    <a
+                        href="https://discord.com/invite/nickplayscrypto"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="w-10 h-10 rounded-full bg-white/5 backdrop-blur-xl border border-white/20 flex items-center justify-center hover:bg-white/20 transition-colors"
+                    >
+                        <MessageCircle className="w-5 h-5 text-white" />
+                    </a>
+                </div>
+            </div>
         </div>
 
-        {/* Bottom Bar */}
-        <div className="border-t border-white/10 mt-12 pt-8 flex flex-col md:flex-row justify-between items-center">
-          <p className="text-gray-400 mb-4 md:mb-0">
-            &copy; 2025 TCG Meta. All rights reserved.
-          </p>
-               </div>
+        <div className="border-t border-white/5 pt-6 flex flex-col md:flex-row justify-between items-center text-xs text-gray-600 font-mono">
+            <p>&copy; 2025 TCGMeta Inc. All rights reserved.</p>
+            <div className="flex gap-8 mt-4 md:mt-0">
+                <a href="#" className="hover:text-white">Privacy Policy</a>
+                <a href="#" className="hover:text-white">Terms of Service</a>
+            </div>
+        </div>
       </div>
     </footer>
-  )
-}
+  );
+};
+
+export default Footer;
