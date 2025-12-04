@@ -4,6 +4,7 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useSearchParams }          from "next/navigation";
 import {
   useReadContract,
@@ -11,7 +12,7 @@ import {
   useReadContracts,
 }                                   from "wagmi";
 import { usePrivy }                 from "@privy-io/react-auth";
-import { Sparkles }                  from "lucide-react";
+import { Sparkles, Activity, Layers, Box, Database, Server, Globe, Zap } from "lucide-react";
 
 import FullPageLoader               from "@/components/FullPageLoader";
 import useEnsureBaseSepolia         from "@/hooks/useEnsureNetwork";
@@ -56,6 +57,7 @@ function Inner() {
   const { ready } = usePrivy();
   const searchParams       = useSearchParams();              // ⬅ OK inside Suspense
   const keyword            = (searchParams.get("search") || "").toLowerCase();
+  const typeFilter         = searchParams.get("type") || "";  // Filter by type: 'pack', 'erc1155', 'single'
 
   // Fetch total collections count from both factories
   const {
@@ -390,7 +392,7 @@ function Inner() {
     return processed;
   }, [allCollections, physicalNftMetadata]);
 
-  /* filter by keyword (memoised) */
+  /* filter by keyword and type (memoised) */
   const filteredCollections = useMemo<Array<{
     address: string;
     name: string;
@@ -401,18 +403,23 @@ function Inner() {
     owner: string;
     type: 'erc1155' | 'single' | 'pack';
   }>>(() => {
-    if (!keyword) return processedPhysicalNft;
-    return processedPhysicalNft.filter((col) =>
-      col.name?.toLowerCase().includes(keyword)
-    );
-  }, [keyword, processedPhysicalNft]);
+    let filtered = processedPhysicalNft;
+    
+    // Filter by type if specified
+    if (typeFilter) {
+      filtered = filtered.filter((col) => col.type === typeFilter);
+    }
+    
+    // Filter by keyword if specified
+    if (keyword) {
+      filtered = filtered.filter((col) =>
+        col.name?.toLowerCase().includes(keyword)
+      );
+    }
+    
+    return filtered;
+  }, [keyword, typeFilter, processedPhysicalNft]);
 
-  const filteredPhysicalNft = useMemo(() => {
-    if (!keyword) return processedPhysicalNft;
-    return processedPhysicalNft.filter((col) =>
-      col.name?.toLowerCase().includes(keyword)
-    );
-  }, [keyword, processedPhysicalNft]);
 
   /* early returns */
   if (loading) return <FullPageLoader message="Loading collections…" />;
@@ -433,13 +440,167 @@ function Inner() {
     return <Empty>No collections found for "{keyword}".</Empty>;
 
   /* ---------------- main render ---------------- */
+  const getTypeLabel = () => {
+    if (typeFilter === 'pack') return 'Pack Series';
+    if (typeFilter === 'erc1155') return 'ERC1155 Collections';
+    if (typeFilter === 'single') return 'Physical Backed';
+    return 'All Collections';
+  };
+
   return (
-    <div className="min-h-screen bg-black">
-      <div className="container mx-auto px-6 py-20">
-        <h1 className="text-3xl font-bold text-white mb-8">Collections</h1>
-        
-        {filteredCollections.length > 0 && (
-          <div className="grid gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+    <div className="min-h-screen bg-[#030014] relative overflow-hidden">
+      {/* Background Effects */}
+      <div className="fixed inset-0 pointer-events-none">
+        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-neon-purple/50 to-transparent" />
+        <div className="absolute bottom-0 right-0 w-[500px] h-[500px] bg-neon-blue/10 rounded-full blur-[120px]" />
+        <div className="absolute top-20 left-[-10%] w-[600px] h-[600px] bg-neon-purple/10 rounded-full blur-[120px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:50px_50px] opacity-20" />
+      </div>
+
+      <div className="container mx-auto px-6 py-20 relative z-10 md:px-24">
+        <div className="mb-12">
+          <h1 className="font-display font-bold text-4xl md:text-5xl text-white mb-8">
+            {getTypeLabel()}
+          </h1>
+          
+          {/* Filter Buttons */}
+          <div className="flex flex-wrap items-center gap-3 mb-12">
+            <Link
+              href="/collection"
+              className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold uppercase transition-all border ${
+                !typeFilter
+                  ? 'bg-neon-blue/20 text-neon-blue border-neon-blue/60 shadow-[0_0_15px_rgba(0,243,255,0.3)]'
+                  : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/30 hover:text-white'
+              }`}
+            >
+              All Collections
+            </Link>
+            <Link
+              href="/collection?type=single"
+              className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold uppercase transition-all border flex items-center gap-2 ${
+                typeFilter === 'single'
+                  ? 'bg-neon-blue/20 text-neon-blue border-neon-blue/60 shadow-[0_0_15px_rgba(0,243,255,0.3)]'
+                  : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/30 hover:text-white'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              Physical Backed
+            </Link>
+            <Link
+              href="/collection?type=erc1155"
+              className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold uppercase transition-all border flex items-center gap-2 ${
+                typeFilter === 'erc1155'
+                  ? 'bg-neon-purple/20 text-neon-purple border-neon-purple/60 shadow-[0_0_15px_rgba(176,38,255,0.3)]'
+                  : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/30 hover:text-white'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              Hybrid (ERC1155)
+            </Link>
+            <Link
+              href="/collection?type=pack"
+              className={`px-5 py-2.5 rounded-xl text-xs font-display font-bold uppercase transition-all border flex items-center gap-2 ${
+                typeFilter === 'pack'
+                  ? 'bg-neon-pink/20 text-neon-pink border-neon-pink/60 shadow-[0_0_15px_rgba(255,0,255,0.3)]'
+                  : 'bg-white/5 text-gray-400 border-white/10 hover:border-white/30 hover:text-white'
+              }`}
+            >
+              <Box className="w-3.5 h-3.5" />
+              Pack Series
+            </Link>
+          </div>
+        </div>
+
+        {/* Main Content Grid */}
+        <div className="grid lg:grid-cols-12 gap-8">
+          {/* Left Sidebar */}
+          <div className="lg:col-span-3 space-y-6">
+            <div className="relative bg-gradient-to-br from-gray-900/95 to-black/95 backdrop-blur-xl border border-white/10 rounded-xl p-6 overflow-hidden">
+              {/* Bracket decoration */}
+              <div className="absolute top-0 left-0 w-8 h-full border-l-2 border-t-2 border-b-2 border-white/20 rounded-l-xl" />
+              <div className="absolute top-0 right-0 w-8 h-full border-r-2 border-t-2 border-b-2 border-white/20 rounded-r-xl" />
+              
+              <div className="relative z-10">
+                <h3 className="text-white font-display font-bold text-xl mb-4 flex items-center gap-2">
+                  <Database className="w-5 h-5 text-neon-blue" />
+                  Collection Index
+                </h3>
+                <p className="text-gray-400 text-sm leading-relaxed font-sans mb-6">
+                  Browse through all verified collections on TCGMeta. Each collection is authenticated on the Base network and indexed by the Cardify Oracle for seamless trading.
+                </p>
+                <div className="flex gap-2 text-xs font-mono text-neon-blue mb-6">
+                  <span className="animate-pulse">●</span> {filteredCollections.length} Collection{filteredCollections.length !== 1 ? 's' : ''} Active
+                </div>
+
+                {/* Stats */}
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-gray-500 font-mono font-bold uppercase tracking-widest flex items-center gap-2">
+                        <Globe className="w-3 h-3" />
+                        NETWORK STATUS
+                      </span>
+                      <span className="text-xs text-green-400 font-mono font-bold">ONLINE</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden border border-white/10">
+                      <div className="h-full bg-green-500 w-full shadow-[0_0_10px_rgba(34,197,94,0.5)]" />
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-gray-500 font-mono font-bold uppercase tracking-widest flex items-center gap-2">
+                        <Zap className="w-3 h-3" />
+                        INDEXING
+                      </span>
+                      <span className="text-xs text-neon-blue font-mono font-bold">100%</span>
+                    </div>
+                    <div className="w-full h-2 bg-gray-800 rounded-full overflow-hidden border border-white/10">
+                      <div className="h-full bg-neon-blue w-full shadow-[0_0_10px_rgba(0,243,255,0.5)]" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Collection Types Info */}
+            <div className="relative bg-gradient-to-br from-gray-900/95 to-black/95 backdrop-blur-xl border border-white/10 rounded-xl p-6 overflow-hidden">
+              <div className="relative z-10">
+                <h3 className="text-white font-display font-bold text-lg mb-4 flex items-center gap-2">
+                  <Server className="w-5 h-5 text-neon-purple" />
+                  Collection Types
+                </h3>
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <Activity className="w-4 h-4 text-neon-blue mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className="text-xs font-display font-bold text-white mb-1">Physical Backed</div>
+                      <div className="text-[10px] text-gray-400 font-sans">Graded slabs with physical redemption</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <Layers className="w-4 h-4 text-neon-purple mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className="text-xs font-display font-bold text-white mb-1">Hybrid (ERC1155)</div>
+                      <div className="text-[10px] text-gray-400 font-sans">Digital collections with multiple editions</div>
+                    </div>
+                  </div>
+                  <div className="flex items-start gap-3 p-3 bg-white/5 rounded-lg border border-white/10">
+                    <Box className="w-4 h-4 text-neon-pink mt-0.5 flex-shrink-0" />
+                    <div>
+                      <div className="text-xs font-display font-bold text-white mb-1">Pack Series</div>
+                      <div className="text-[10px] text-gray-400 font-sans">Mystery packs with 5 randomized NFTs</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: Collections Grid */}
+          <div className="lg:col-span-9">
+            {filteredCollections.length > 0 ? (
+              <div className="grid gap-8 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
             {filteredCollections.map((col, i) => {
               // For pack collections, use pack_image_uri from database if available
               const packData = packDataMap[col.address.toLowerCase()];
@@ -448,7 +609,7 @@ function Inner() {
                 : CONTRACTS.collectionPreview(col.address);
               
               return (
-                <div key={col.address}>
+                <div key={col.address} className="animate-fade-in-up" style={{ animationDelay: `${i * 0.1}s` }}>
                   <CollectionCard
                     address={col.address}
                     preview={preview}
@@ -457,8 +618,26 @@ function Inner() {
                 </div>
               );
             })}
+              </div>
+            ) : (
+          <div className="flex flex-col items-center justify-center h-96 border-2 border-dashed border-white/10 rounded-3xl bg-white/5 relative overflow-hidden">
+            <div className="absolute inset-0 bg-scanlines opacity-10 pointer-events-none" />
+            <div className="relative z-10 text-center">
+              <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Box className="w-8 h-8 text-gray-600" />
+              </div>
+              <h3 className="text-2xl font-display font-bold text-white mb-2">No Collections Found</h3>
+              <p className="text-gray-400 font-mono text-sm max-w-md mx-auto">
+                {typeFilter 
+                  ? `No ${typeFilter === 'erc1155' ? 'Hybrid' : typeFilter === 'pack' ? 'Pack' : 'Physical Backed'} collections available.`
+                  : 'No collections are available at this time.'
+                }
+              </p>
+            </div>
           </div>
-        )}
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
