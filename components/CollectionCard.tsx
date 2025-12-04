@@ -2,9 +2,9 @@
 
 import Link from "next/link"
 import { useCollectionMeta } from "@/hooks/useCollectionMeta"
-import { ArrowRight, Sparkles, Eye, ExternalLink } from "lucide-react"
+import { ArrowRight, Sparkles, Eye, ExternalLink, Activity, Layers, Box } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-// Removed resolveDisplayImageUrl import - now using server-side API route
+import TiltCard from "@/components/ui/TiltCard"
 
 interface Props {
   address: string
@@ -18,6 +18,38 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
   const [isHovered, setIsHovered] = useState(false)
   const [imageLoaded, setImageLoaded] = useState(false)
   const [resolvedSrc, setResolvedSrc] = useState<string | null>(null)
+  
+  // Get theme colors based on type
+  const themeColors = useMemo(() => {
+    if (type === 'erc1155') {
+      return {
+        border: 'border-neon-purple/40',
+        hoverBorder: 'hover:border-neon-purple/60',
+        glow: 'rgba(176, 38, 255, 0.4)',
+        badge: 'bg-gradient-to-r from-neon-purple/20 to-neon-purple/5 border-neon-purple/40',
+        text: 'text-neon-purple',
+        icon: 'text-neon-purple',
+      }
+    } else if (type === 'pack') {
+      return {
+        border: 'border-neon-pink/40',
+        hoverBorder: 'hover:border-neon-pink/60',
+        glow: 'rgba(255, 0, 255, 0.4)',
+        badge: 'bg-gradient-to-r from-neon-pink/20 to-neon-pink/5 border-neon-pink/40',
+        text: 'text-neon-pink',
+        icon: 'text-neon-pink',
+      }
+    } else {
+      return {
+        border: 'border-neon-blue/40',
+        hoverBorder: 'hover:border-neon-blue/60',
+        glow: 'rgba(0, 243, 255, 0.4)',
+        badge: 'bg-gradient-to-r from-neon-blue/20 to-neon-blue/5 border-neon-blue/40',
+        text: 'text-neon-blue',
+        icon: 'text-neon-blue',
+      }
+    }
+  }, [type])
 
   // For pack collections, prioritize preview (pack_image_uri from database) over contract URI
   const effectiveImageUri = useMemo(() => {
@@ -81,123 +113,137 @@ export default function CollectionCard({ address, preview, tokenId = 0n, type = 
     return fallback;
   }, [resolvedSrc, fallback]);
 
+  // Build the URL with type filter
+  const collectionUrl = useMemo(() => {
+    const typeParam = type === 'erc1155' ? 'erc1155' : type === 'pack' ? 'pack' : 'single';
+    return `/collection?type=${typeParam}`;
+  }, [type]);
+
   return (
     <Link
-      href={`/${address}`}
+      href={collectionUrl}
       className="group block w-full"
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <div className="relative bg-gradient-to-br from-white/10 to-white/5 backdrop-blur-xl rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 overflow-hidden border border-white/20 hover:border-white/40 group-hover:scale-[1.02] group-hover:shadow-2xl group-hover:shadow-purple-500/20">
-        
-        {/* Image Container */}
-        <div className="relative aspect-square overflow-hidden">
-          {/* Hybrid Badge for ERC1155 collections */}
-          {type === 'erc1155' && (
-            <div className="absolute top-3 right-3 z-10">
-              <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
-                Hybrid
-              </div>
-            </div>
-          )}
-          {/* Pack Badge for Pack collections */}
-          {type === 'pack' && (
-            <div className="absolute top-3 right-3 z-10">
-              <div className="bg-gradient-to-r from-purple-500 to-pink-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg">
-                Pack
-              </div>
-            </div>
-          )}
-          <img
-            key={proxySrc}
-            src={proxySrc}
-            crossOrigin="anonymous"
-            referrerPolicy="no-referrer"
-            alt={name || "NFT Collection"}
-            className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-105 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
-            onLoad={() => setImageLoaded(true)}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = fallback
-              setImageLoaded(true)
-            }}
-          />
+      <TiltCard className="h-full w-full" glowColor={themeColors.glow}>
+        <div 
+          className={`relative bg-gradient-to-br from-gray-900/95 via-gray-900/90 to-black/95 backdrop-blur-xl rounded-xl overflow-hidden border ${themeColors.border} ${themeColors.hoverBorder} transition-all duration-300 shadow-[0_0_20px_rgba(0,0,0,0.3)]`}
+          style={{ 
+            boxShadow: isHovered ? `0 0 30px ${themeColors.glow}` : '0 0 20px rgba(0,0,0,0.3)'
+          }}
+        >
           
-          {/* Loading State */}
-          {(!imageLoaded || isLoading) && (
-            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
-              <div className="w-8 h-8 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center animate-spin">
-                <Sparkles className="w-4 h-4 text-white" />
-              </div>
-            </div>
-          )}
-          
-          {/* Hover Overlay */}
-          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all duration-300 flex items-center justify-center">
-            <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-2 group-hover:translate-y-0">
-              <div className="bg-white/20 backdrop-blur-sm rounded-full p-3 shadow-lg border border-white/30">
-                <ExternalLink className="w-5 h-5 text-white" />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Content */}
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex-1 min-w-0">
-              <h3 className="font-bold text-white text-xl mb-2 group-hover:text-transparent group-hover:bg-gradient-to-r group-hover:from-purple-400 group-hover:to-pink-400 group-hover:bg-clip-text transition-all duration-300 truncate">
-                {isLoading ? (
-                  <div className="h-6 bg-gray-600/50 rounded animate-pulse"></div>
-                ) : (
-                  name || "Unnamed Collection"
-                )}
-              </h3>
-              <div className="flex items-center gap-2">
-                {isLoading ? (
-                  <div className="h-4 w-16 bg-gray-600/50 rounded animate-pulse"></div>
-                ) : (
-                  <span className="text-sm text-gray-400 uppercase tracking-wider font-medium">
-                    {symbol || "SYMBOL"}
+          {/* Image Container */}
+          <div className="relative aspect-square overflow-hidden bg-gray-900">
+            {/* Type Badge */}
+            <div className="absolute top-4 right-4 z-20">
+              <div className={`${themeColors.badge} rounded-lg px-3 py-1.5 border backdrop-blur-sm shadow-lg`}>
+                <div className="flex items-center gap-2">
+                  {type === 'erc1155' && <Layers className={`w-3.5 h-3.5 ${themeColors.icon}`} />}
+                  {type === 'pack' && <Box className={`w-3.5 h-3.5 ${themeColors.icon}`} />}
+                  {type === 'single' && <Activity className={`w-3.5 h-3.5 ${themeColors.icon}`} />}
+                  <span className={`text-[10px] font-display font-bold uppercase tracking-widest ${themeColors.text}`}>
+                    {type === 'erc1155' ? 'HYBRID' : type === 'pack' ? 'PACK' : 'SINGLE'}
                   </span>
-                )}
-                <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
-                <div className="flex items-center gap-1">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
-                  <span className="text-xs text-green-400 font-medium">Active</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Decorative Tech Lines */}
+            <div className="absolute top-4 left-4 w-16 h-[1px] bg-gradient-to-r from-white/50 to-transparent z-10" />
+            <div className="absolute top-4 left-4 w-[1px] h-16 bg-gradient-to-b from-white/50 to-transparent z-10" />
+            
+            <img
+              key={proxySrc}
+              src={proxySrc}
+              crossOrigin="anonymous"
+              referrerPolicy="no-referrer"
+              alt={name || "NFT Collection"}
+              className={`w-full h-full object-cover transition-all duration-700 group-hover:scale-110 ${imageLoaded ? "opacity-100" : "opacity-0"}`}
+              onLoad={() => setImageLoaded(true)}
+              onError={(e) => {
+                (e.target as HTMLImageElement).src = fallback
+                setImageLoaded(true)
+              }}
+            />
+            
+            {/* Gradient Overlays */}
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/50 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80" />
+            
+            {/* Loading State */}
+            {(!imageLoaded || isLoading) && (
+              <div className="absolute inset-0 bg-gray-900 flex items-center justify-center z-10">
+                <div className="relative">
+                  <div className={`w-12 h-12 rounded-full border-2 ${themeColors.border} animate-spin`} style={{ borderTopColor: 'transparent' }} />
+                  <Sparkles className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-5 h-5 ${themeColors.icon} animate-pulse`} />
+                </div>
+              </div>
+            )}
+            
+            {/* Hover Overlay */}
+            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center z-10">
+              <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-300 transform translate-y-4 group-hover:translate-y-0">
+                <div className="bg-white/10 backdrop-blur-md rounded-full p-4 shadow-[0_0_20px_rgba(0,0,0,0.5)] border border-white/20">
+                  <ExternalLink className={`w-6 h-6 ${themeColors.icon}`} />
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom glow line on hover */}
+            <div className={`absolute bottom-0 left-0 h-[2px] w-0 group-hover:w-full transition-all duration-700 bg-gradient-to-r from-transparent via-white to-transparent`} />
+          </div>
+
+          {/* Content */}
+          <div className="p-5 bg-gradient-to-b from-gray-900/80 to-black/90 relative">
+            {/* Background Grid Pattern */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:20px_20px] opacity-20 pointer-events-none" />
+            
+            <div className="relative z-10">
+              <div className="mb-4">
+                <h3 className="font-display font-bold text-xl text-white mb-2 group-hover:text-transparent group-hover:bg-clip-text group-hover:bg-gradient-to-r group-hover:from-white group-hover:to-gray-300 transition-all duration-300 truncate">
+                  {isLoading ? (
+                    <div className="h-6 bg-gray-700/50 rounded animate-pulse"></div>
+                  ) : (
+                    name || "Unnamed Collection"
+                  )}
+                </h3>
+                <div className="flex items-center gap-3">
+                  {isLoading ? (
+                    <div className="h-4 w-20 bg-gray-700/50 rounded animate-pulse"></div>
+                  ) : (
+                    <span className="text-xs font-mono text-gray-400 uppercase tracking-widest font-bold">
+                      {symbol || "SYMBOL"}
+                    </span>
+                  )}
+                  <div className="w-1 h-1 bg-gray-600 rounded-full"></div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.6)]"></div>
+                    <span className="text-[10px] text-green-400 font-mono font-bold uppercase tracking-wider">ACTIVE</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-4 border-t border-white/10">
+                <div className="flex items-center gap-2 text-xs text-gray-400 font-mono">
+                  <Eye className={`w-4 h-4 ${themeColors.icon}`} />
+                  <span className="uppercase tracking-wider">View</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="text-[10px] text-gray-500 font-mono bg-black/60 backdrop-blur-sm px-2 py-1 rounded border border-white/10">
+                    {address.slice(0, 6)}...{address.slice(-4)}
+                  </div>
+                  <ArrowRight className={`w-4 h-4 ${themeColors.icon} group-hover:translate-x-1 transition-transform`} />
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-4 border-t border-white/10">
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <div className="w-6 h-6 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center">
-                <Eye className="w-3 h-3 text-white" />
-              </div>
-              <span>View Collection</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="text-xs text-gray-500 font-mono bg-white/10 backdrop-blur-sm px-2 py-1 rounded border border-white/20">
-                {address.slice(0, 6)}...{address.slice(-4)}
-              </div>
-              <div className={`text-xs px-2 py-1 rounded font-medium ${
-                type === 'erc1155' 
-                  ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' 
-                  : type === 'pack'
-                  ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30'
-                  : 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-              }`}>
-                {type === 'erc1155' ? 'ERC1155' : type === 'pack' ? 'Pack' : 'Single'}
-              </div>
-            </div>
-          </div>
+          {/* Outer glow effect */}
+          <div className="absolute -inset-1 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none -z-10 blur-md" style={{ background: `linear-gradient(135deg, ${themeColors.glow}, transparent)` }} />
         </div>
-
-        {/* Gradient glow effect */}
-        <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none">
-          <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-blue-500/20 blur-xl" />
-        </div>
-      </div>
+      </TiltCard>
     </Link>
   )
 }
