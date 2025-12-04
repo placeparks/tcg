@@ -231,7 +231,7 @@ export default function PackListingModal({
             <Button
               variant="outline"
               onClick={onClose}
-              className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800"
+              className="flex-1 border-gray-700 text-gray-300 hover:bg-gray-800 text-black"
               disabled={isListing}
             >
               Cancel
