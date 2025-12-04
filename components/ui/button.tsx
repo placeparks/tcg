@@ -11,6 +11,8 @@ const buttonVariants = cva(
       variant: {
         default:
           "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+        primary:
+          "bg-neon-purple text-white shadow-xs hover:bg-neon-purple/90",
         destructive:
           "bg-destructive text-white shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/60",
         outline:
@@ -35,22 +37,31 @@ const buttonVariants = cva(
   }
 )
 
+export type ButtonVariant = "default" | "primary" | "destructive" | "outline" | "secondary" | "ghost" | "link"
+
 function Button({
   className,
   variant,
   size,
   asChild = false,
+  glow,
   ...props
 }: React.ComponentProps<"button"> &
-  VariantProps<typeof buttonVariants> & {
+  Omit<VariantProps<typeof buttonVariants>, "variant"> & {
+    variant?: ButtonVariant
     asChild?: boolean
+    glow?: boolean
   }) {
   const Comp = asChild ? Slot : "button"
 
   return (
     <Comp
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(
+        buttonVariants({ variant, size }),
+        glow && "shadow-[0_0_30px_rgba(176,38,255,0.6)] hover:shadow-[0_0_40px_rgba(176,38,255,0.8)]",
+        className
+      )}
       {...props}
     />
   )
