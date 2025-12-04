@@ -82,6 +82,7 @@ export default function ListingPage() {
   const [price,    setPrice]    = useState("");
   const [metadata, setMetadata] = useState<{ image?: string; name?: string } | null>(null);
   const [busy,     setBusy]     = useState(false);
+  const [isListing, setIsListing] = useState(false);
 
   const { address }            = useAccount();
   const chainId                = useChainId();
@@ -251,6 +252,7 @@ export default function ListingPage() {
       const listingId = tokenId;
 
       setBusy(true);
+      setIsListing(true);
       toast.loading("Checking approval…", { id: "tx" });
 
       // Check ERC1155 approval
@@ -691,11 +693,12 @@ export default function ListingPage() {
       toast.error(errorMessage);
     } finally {
       setBusy(false);
+      setIsListing(false);
     }
   }
 
   /* ------------- UI states ------------- */
-  if (busy) return <FullPageLoader message="Loading NFT metadata…" />;
+  if (busy && !metadata) return <FullPageLoader message="Loading NFT metadata…" />;
 
   if (!metadata)
     return (
@@ -721,11 +724,21 @@ export default function ListingPage() {
                           z-[-1]" />
 
           {metadata.image && (
-            <img
-              src={ipfsToHttp(metadata.image)}
-              alt={metadata.name || "NFT"}
-              className="w-full max-w-md h-auto rounded-xl mx-auto border border-purple-500/30 shadow-md"
-            />
+            <div className={`relative w-full max-w-md mx-auto ${isListing ? 'glitch-image' : ''}`}>
+              <img
+                src={ipfsToHttp(metadata.image)}
+                alt={metadata.name || "NFT"}
+                className="w-full h-auto rounded-xl border border-purple-500/30 shadow-md transition-all duration-300 relative z-10"
+              />
+              {isListing && (
+                <>
+                  {/* Glitch overlay layers */}
+                  <div className="absolute inset-0 glitch-layer-1 pointer-events-none rounded-xl" />
+                  <div className="absolute inset-0 glitch-layer-2 pointer-events-none rounded-xl" />
+                  <div className="absolute inset-0 glitch-layer-3 pointer-events-none rounded-xl" />
+                </>
+              )}
+            </div>
           )}
 
           <div className="text-center my-6 space-y-1">
@@ -764,6 +777,163 @@ export default function ListingPage() {
           </Button>
         </div>
       </div>
+
+      {/* Glitch Animation Styles */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes glitch {
+          0% {
+            transform: translate(0);
+            filter: hue-rotate(0deg);
+          }
+          10% {
+            transform: translate(-2px, 2px);
+            filter: hue-rotate(90deg);
+          }
+          20% {
+            transform: translate(-2px, -2px);
+            filter: hue-rotate(180deg);
+          }
+          30% {
+            transform: translate(2px, 2px);
+            filter: hue-rotate(270deg);
+          }
+          40% {
+            transform: translate(2px, -2px);
+            filter: hue-rotate(360deg);
+          }
+          50% {
+            transform: translate(-2px, 2px);
+            filter: hue-rotate(90deg);
+          }
+          60% {
+            transform: translate(-2px, -2px);
+            filter: hue-rotate(180deg);
+          }
+          70% {
+            transform: translate(2px, 2px);
+            filter: hue-rotate(270deg);
+          }
+          80% {
+            transform: translate(-2px, -2px);
+            filter: hue-rotate(360deg);
+          }
+          90% {
+            transform: translate(2px, 2px);
+            filter: hue-rotate(90deg);
+          }
+          100% {
+            transform: translate(0);
+            filter: hue-rotate(0deg);
+          }
+        }
+
+        @keyframes glitch-scan {
+          0% {
+            transform: translateX(-100%);
+            opacity: 0;
+          }
+          50% {
+            opacity: 1;
+          }
+          100% {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+        }
+
+        @keyframes glitch-flicker {
+          0%, 100% {
+            opacity: 1;
+          }
+          41.99% {
+            opacity: 1;
+          }
+          42% {
+            opacity: 0;
+          }
+          43% {
+            opacity: 0;
+          }
+          43.01% {
+            opacity: 1;
+          }
+          47.99% {
+            opacity: 1;
+          }
+          48% {
+            opacity: 0;
+          }
+          49% {
+            opacity: 0;
+          }
+          49.01% {
+            opacity: 1;
+          }
+        }
+
+        .glitch-image {
+          animation: glitch 0.3s infinite, glitch-flicker 0.15s infinite;
+          position: relative;
+        }
+
+        .glitch-image img {
+          position: relative;
+          z-index: 1;
+        }
+
+        .glitch-layer-1 {
+          background: linear-gradient(90deg, transparent, rgba(255, 0, 255, 0.4), transparent);
+          animation: glitch-scan 0.5s infinite;
+          mix-blend-mode: screen;
+          z-index: 2;
+        }
+
+        .glitch-layer-2 {
+          background: linear-gradient(90deg, transparent, rgba(0, 255, 255, 0.4), transparent);
+          animation: glitch-scan 0.7s infinite reverse;
+          mix-blend-mode: screen;
+          z-index: 3;
+        }
+
+        .glitch-layer-3 {
+          background: linear-gradient(90deg, transparent, rgba(255, 255, 0, 0.3), transparent);
+          animation: glitch-scan 0.4s infinite;
+          mix-blend-mode: difference;
+          z-index: 4;
+        }
+
+        .glitch-image::before {
+          content: '';
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 45%;
+          background: linear-gradient(135deg, rgba(255, 0, 255, 0.3), rgba(0, 255, 255, 0.3));
+          clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+          transform: translateX(-3px);
+          animation: glitch 0.3s infinite;
+          mix-blend-mode: screen;
+          z-index: 5;
+          border-radius: 0.75rem 0.75rem 0 0;
+        }
+
+        .glitch-image::after {
+          content: '';
+          position: absolute;
+          bottom: 0;
+          left: 0;
+          width: 100%;
+          height: 55%;
+          background: linear-gradient(135deg, rgba(0, 255, 255, 0.3), rgba(255, 255, 0, 0.3));
+          clip-path: polygon(0 0, 100% 0, 100% 100%, 0 100%);
+          transform: translateX(3px);
+          animation: glitch 0.3s infinite reverse;
+          mix-blend-mode: screen;
+          z-index: 6;
+          border-radius: 0 0 0.75rem 0.75rem;
+        }
+      `}} />
     </div>
   );
 }
