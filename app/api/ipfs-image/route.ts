@@ -9,6 +9,8 @@ const PUBLIC_GATEWAYS = [
   "https://gateway.pinata.cloud", // Keep as last resort due to rate limits
 ];
 
+const TIMEOUT_MS = 10000; // Increased timeout to 10 seconds
+
 export async function GET(req: NextRequest) {
   const src = req.nextUrl.searchParams.get("src");
   if (!src) return NextResponse.json({ error: "src required" }, { status: 400 });
@@ -24,7 +26,27 @@ export async function GET(req: NextRequest) {
       directUrl = src; // Use the URL directly
       raw = urlMatch[2]; // Extract CID for fallback gateways
     } else {
-      // Not an IPFS gateway URL, return as-is
+      // Not an IPFS gateway URL, but might be a direct image URL - try to return it
+      if (src.match(/\.(jpg|jpeg|png|gif|webp|svg|bmp|ico|jfif)$/i)) {
+        try {
+          const response = await fetch(src, {
+            cache: "no-store",
+            signal: AbortSignal.timeout(TIMEOUT_MS),
+          });
+          if (response.ok) {
+            const arrayBuffer = await response.arrayBuffer();
+            const headers = new Headers();
+            headers.set("Cache-Control", "public, max-age=31536000, immutable, stale-while-revalidate=86400");
+            const contentType = response.headers.get("content-type");
+            if (contentType) {
+              headers.set("content-type", contentType);
+            }
+            return new NextResponse(arrayBuffer, { status: 200, headers });
+          }
+        } catch (error) {
+          console.log(`Direct image URL ${src} failed:`, error);
+        }
+      }
       return NextResponse.json({ error: "Invalid IPFS URL format" }, { status: 400 });
     }
   } else {
@@ -34,10 +56,18 @@ export async function GET(req: NextRequest) {
   // Try direct URL first if available
   if (directUrl) {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      
       const upstream = await fetch(directUrl, {
         cache: "no-store",
-        signal: AbortSignal.timeout(8000),
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
       });
+      clearTimeout(timeoutId);
+      
       if (upstream.ok) {
         const arrayBuffer = await upstream.arrayBuffer();
         const headers = new Headers();
@@ -48,8 +78,8 @@ export async function GET(req: NextRequest) {
         }
         return new NextResponse(arrayBuffer, { status: 200, headers });
       }
-    } catch (error) {
-      console.log(`Direct URL ${directUrl} failed:`, error);
+    } catch (error: any) {
+      console.log(`Direct URL ${directUrl} failed:`, error?.message || error);
       // Fall through to try other gateways
     }
   }
@@ -58,10 +88,18 @@ export async function GET(req: NextRequest) {
   for (const gw of PUBLIC_GATEWAYS) {
     const url = `${gw}/ipfs/${raw}`;
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+      
       const upstream = await fetch(url, {
         cache: "no-store",
-        signal: AbortSignal.timeout(8000),
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+        },
       });
+      clearTimeout(timeoutId);
+      
       if (upstream.ok) {
         const arrayBuffer = await upstream.arrayBuffer();
         const headers = new Headers();
@@ -72,10 +110,18 @@ export async function GET(req: NextRequest) {
         }
         return new NextResponse(arrayBuffer, { status: 200, headers });
       }
-    } catch (error) {
-      console.log(`IPFS gateway ${gw} failed for ${raw}:`, error);
+    } catch (error: any) {
+      console.log(`IPFS gateway ${gw} failed for ${raw}:`, error?.message || error);
       // Continue to next gateway
     }
   }
-  return NextResponse.json({ error: "All gateways failed" }, { status: 502 });
+  
+  console.error(`All IPFS gateways failed for: ${raw || directUrl}`);
+  
+  // Return a proper error response that the frontend can handle
+  return NextResponse.json({ 
+    error: "All gateways failed", 
+    cid: raw || directUrl,
+    message: "Unable to fetch image from IPFS gateways. The content may not be available or gateways are temporarily unavailable."
+  }, { status: 502 });
 }
